@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package sender;
+option go_package = "gitlab.com/f_mancini/distribuitedOrderedMulticast/sender/service/sender";
+
+service Sender {
+  rpc send (Message) returns (Empty) {}
+}
+
+// The request message containing the user's name.
+message Message {
+  map<string, string> metadata = 1;
+  bytes payload = 2;
+
+}
+// The response message containing the greetings
+message Empty {
+}
