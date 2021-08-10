@@ -9,8 +9,9 @@ service Sender {
 
 // The request message containing the user's name.
 message Message {
-  map<string, string> metadata = 1;
-  bytes payload = 2;
+  string id = 1;
+  map<string, string> metadata = 2;
+  bytes payload = 3;
 
 }
 // The response message containing the greetings

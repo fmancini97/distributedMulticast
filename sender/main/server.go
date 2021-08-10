@@ -1,11 +1,22 @@
 package main
 
 import (
+	dom "gitlab.com/f_mancini/distribuitedOrderedMulticast"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/sender"
 	"google.golang.org/grpc"
 	"log"
 	"net"
 )
+
+type consumer struct {
+	ch chan dom.Message
+}
+
+func (c consumer) Deliver(message dom.Message) error {
+	log.Printf("Processing new message")
+	c.ch <- message
+	return nil
+}
 
 func main() {
 	lis, err := net.Listen("tcp", "localhost:8080")
@@ -19,15 +30,16 @@ func main() {
 	}
 
 	go func() {
-		ch, err := sender.AddCh("deadbeef")
+		deliverer := consumer{make(chan dom.Message)}
+		err := sender.AddDeliverer("deadbeef", deliverer)
 		if err != nil {
 			log.Fatalf("failed to add channel: %v", err)
 		}
 
 		for {
 			select {
-			case message := <-ch:
-				log.Printf("New message: Header: %s - Payload: %s", message.Metadata, string(message.Payload))
+			case message := <-deliverer.ch:
+				log.Printf("New message: Header: %s - Payload: %s", message, string(message.Payload))
 			}
 		}
 	}()

@@ -2,28 +2,20 @@ package main
 
 import (
 	"bufio"
-	"context"
 	"fmt"
-	pb "gitlab.com/f_mancini/distribuitedOrderedMulticast/sender/service"
-	"google.golang.org/grpc"
+	"gitlab.com/f_mancini/distribuitedOrderedMulticast"
+	"gitlab.com/f_mancini/distribuitedOrderedMulticast/sender"
 	"log"
 	"os"
-	"time"
 )
 
 func main() {
 	// Set up a connection to the server.
-	conn, err := grpc.Dial("localhost:8080", grpc.WithInsecure(), grpc.WithBlock())
-	if err != nil {
-		log.Fatalf("did not connect: %v", err)
-	}
-	defer func(conn *grpc.ClientConn) {
-		err := conn.Close()
-		if err != nil {
+	conn, err := sender.ConnectWithDelay("localhost:8080", 5)
 
-		}
-	}(conn)
-	c := pb.NewSenderClient(conn)
+	if err != nil {
+		log.Fatalf("could not connect: %v", err)
+	}
 
 	reader := bufio.NewReader(os.Stdin)
 	header := make(map[string]string)
@@ -34,14 +26,13 @@ func main() {
 		text, _ := reader.ReadString('\n')
 		//fmt.Println(text)
 
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-
-		_, err := c.Send(ctx, &pb.Message{Metadata: header, Payload: []byte(text)})
+		err := conn.Send("deadbeef", distribuitedOrderedMulticast.Message{
+			Metadata: header,
+			Payload:  []byte(text),
+		})
 		if err != nil {
-			log.Fatalf("could not greet: %v", err)
+			log.Fatalf("could not send message: %v", err)
 		}
-
-		cancel()
 
 	}
 }
