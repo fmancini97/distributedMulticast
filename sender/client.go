@@ -80,7 +80,7 @@ func (gs *GrpcSender) Send(streamId string, message dom.Message) error {
 	}
 
 	if gs.meta.delay > 0 {
-		time.Sleep(time.Duration(gs.meta.rnd.Intn(gs.meta.delay)) * time.Second)
+		time.Sleep(time.Duration(gs.meta.rnd.Intn(gs.meta.delay)) * time.Millisecond)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)

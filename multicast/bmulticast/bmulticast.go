@@ -5,13 +5,15 @@ import (
 	"errors"
 	"fmt"
 	dom "gitlab.com/f_mancini/distribuitedOrderedMulticast"
+	"gitlab.com/f_mancini/distribuitedOrderedMulticast/multicast"
+	"log"
 	"sync"
 )
 
 type sendData struct {
 	message  dom.Message
 	streamId string
-	tg       *target
+	tg       multicast.Target
 	outputCh chan sendResult
 }
 
@@ -78,24 +80,19 @@ func processMessages(quitCh chan bool, messageCh chan sendData) {
 	for {
 		select {
 		case data := <-messageCh:
-			err := data.tg.sender.Send(data.streamId, data.message)
+			err := data.tg.Sender.Send(data.streamId, data.message)
 
-			data.outputCh <- sendResult{address: data.tg.address, err: err}
+			data.outputCh <- sendResult{address: data.tg.Address, err: err}
 		case <-quitCh:
 			return
 		}
 	}
 }
 
-type Bmulticast struct {
-	targets   []*target
-	deliverer *dom.Deliverer
+type bmulticast struct {
+	targets   []multicast.Target
+	deliverer dom.Deliverer
 	streamId  string
-}
-
-type target struct {
-	address string
-	sender  dom.Sender
 }
 
 type sendResult struct {
@@ -103,7 +100,7 @@ type sendResult struct {
 	err     error
 }
 
-func (bm *Bmulticast) SendToAll(message dom.Message) error {
+func (bm bmulticast) SendToAll(message dom.Message) error {
 
 	responseCh := make(chan sendResult)
 
@@ -117,6 +114,11 @@ func (bm *Bmulticast) SendToAll(message dom.Message) error {
 		pool.messageCh <- data
 	}
 
+	err := bm.deliverer.Deliver(message)
+	if err != nil {
+		return err
+	}
+
 	for i := 0; i < len(bm.targets); i++ {
 		result := <-responseCh
 		if result.err != nil {
@@ -128,8 +130,14 @@ func (bm *Bmulticast) SendToAll(message dom.Message) error {
 	return nil
 }
 
-func New(streamId string, deliverer *dom.Deliverer, targets []*target) (Bmulticast, error) {
-	return Bmulticast{
+func (bm bmulticast) Deliver(message dom.Message) error {
+	log.Printf("New message: %s\n", message)
+	return bm.deliverer.Deliver(message)
+
+}
+
+func New(streamId string, deliverer dom.Deliverer, targets []multicast.Target) (bmulticast, error) {
+	return bmulticast{
 		targets:   targets,
 		deliverer: deliverer,
 		streamId:  streamId,
