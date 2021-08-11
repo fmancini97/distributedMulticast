@@ -1,8 +1,12 @@
-package distribuitedOrderedMulticast
+package communication
 
 type Message struct {
 	Metadata map[string]string
 	Payload  []byte
+}
+
+func NewMessage(payload []byte) Message {
+	return Message{Metadata: make(map[string]string), Payload: payload}
 }
 
 type Sender interface {

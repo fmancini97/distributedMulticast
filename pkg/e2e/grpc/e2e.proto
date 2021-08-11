@@ -1,9 +1,9 @@
 syntax = "proto3";
 
-package sender;
-option go_package = "gitlab.com/f_mancini/distribuitedOrderedMulticast/sender/service/sender";
+package grpc;
+option go_package = "gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/e2e/grpc";
 
-service Sender {
+service E2e {
   rpc send (Message) returns (Empty) {}
 }
 

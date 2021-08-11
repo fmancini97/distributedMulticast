@@ -1,18 +1,18 @@
 package main
 
 import (
-	dom "gitlab.com/f_mancini/distribuitedOrderedMulticast"
-	"gitlab.com/f_mancini/distribuitedOrderedMulticast/sender"
+	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/communication"
+	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/e2e"
 	"google.golang.org/grpc"
 	"log"
 	"net"
 )
 
 type consumer struct {
-	ch chan dom.Message
+	ch chan communication.Message
 }
 
-func (c consumer) Deliver(message dom.Message) error {
+func (c consumer) Deliver(message communication.Message) error {
 	log.Printf("Processing new message")
 	c.ch <- message
 	return nil
@@ -24,14 +24,14 @@ func main() {
 		log.Fatalf("failed to listen: %v", err)
 	}
 	s := grpc.NewServer()
-	err = sender.Register(s)
+	err = e2e.Register(s)
 	if err != nil {
 		log.Fatalf("failed to register: %v", err)
 	}
 
 	go func() {
-		deliverer := consumer{make(chan dom.Message)}
-		err := sender.AddDeliverer("deadbeef", deliverer)
+		deliverer := consumer{make(chan communication.Message)}
+		err := e2e.AddDeliverer("deadbeef", deliverer)
 		if err != nil {
 			log.Fatalf("failed to add channel: %v", err)
 		}

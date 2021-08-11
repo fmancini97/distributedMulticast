@@ -1,19 +1,19 @@
-package sender
+package e2e
 
 import (
 	"context"
-	com "gitlab.com/f_mancini/distribuitedOrderedMulticast"
-	pb "gitlab.com/f_mancini/distribuitedOrderedMulticast/sender/service"
+	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/communication"
+	e2egrpc "gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/e2e/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"log"
 )
 
 type server struct {
-	pb.UnimplementedSenderServer
+	e2egrpc.UnimplementedE2EServer
 }
 
-func (s *server) Send(_ context.Context, in *pb.Message) (*pb.Empty, error) {
+func (s *server) Send(_ context.Context, in *e2egrpc.Message) (*e2egrpc.Empty, error) {
 	dlvs.mu.RLock()
 	defer dlvs.mu.RUnlock()
 
@@ -26,10 +26,10 @@ func (s *server) Send(_ context.Context, in *pb.Message) (*pb.Empty, error) {
 		return nil, status.Errorf(codes.NotFound, "Stream %s does not exists", id)
 	}
 
-	err := deliverer.Deliver(com.Message{Metadata: in.Metadata, Payload: in.Payload})
+	err := deliverer.Deliver(communication.Message{Metadata: in.Metadata, Payload: in.Payload})
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, err.Error())
 	}
 
-	return &pb.Empty{}, nil
+	return &e2egrpc.Empty{}, nil
 }

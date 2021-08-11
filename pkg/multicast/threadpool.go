@@ -1,19 +1,16 @@
-package bmulticast
+package multicast
 
 import (
 	"container/list"
 	"errors"
-	"fmt"
-	dom "gitlab.com/f_mancini/distribuitedOrderedMulticast"
-	"gitlab.com/f_mancini/distribuitedOrderedMulticast/multicast"
-	"log"
+	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/communication"
 	"sync"
 )
 
 type sendData struct {
-	message  dom.Message
+	message  communication.Message
 	streamId string
-	tg       multicast.Target
+	tg       Target
 	outputCh chan sendResult
 }
 
@@ -22,6 +19,11 @@ type multicastPool struct {
 	threads    *list.List
 	numThreads int
 	messageCh  chan sendData
+}
+
+type sendResult struct {
+	address string
+	err     error
 }
 
 const numThreads = 5
@@ -87,59 +89,4 @@ func processMessages(quitCh chan bool, messageCh chan sendData) {
 			return
 		}
 	}
-}
-
-type bmulticast struct {
-	targets   []multicast.Target
-	deliverer dom.Deliverer
-	streamId  string
-}
-
-type sendResult struct {
-	address string
-	err     error
-}
-
-func (bm bmulticast) SendToAll(message dom.Message) error {
-
-	responseCh := make(chan sendResult)
-
-	for _, t := range bm.targets {
-		data := sendData{
-			message:  message,
-			streamId: bm.streamId,
-			tg:       t,
-			outputCh: responseCh,
-		}
-		pool.messageCh <- data
-	}
-
-	err := bm.deliverer.Deliver(message)
-	if err != nil {
-		return err
-	}
-
-	for i := 0; i < len(bm.targets); i++ {
-		result := <-responseCh
-		if result.err != nil {
-			close(responseCh)
-			return errors.New(fmt.Sprintf("Address: %s - Error: %s", result.address, result.err.Error()))
-		}
-	}
-
-	return nil
-}
-
-func (bm bmulticast) Deliver(message dom.Message) error {
-	log.Printf("New message: %s\n", message)
-	return bm.deliverer.Deliver(message)
-
-}
-
-func New(streamId string, deliverer dom.Deliverer, targets []multicast.Target) (bmulticast, error) {
-	return bmulticast{
-		targets:   targets,
-		deliverer: deliverer,
-		streamId:  streamId,
-	}, nil
 }

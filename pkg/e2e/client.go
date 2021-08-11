@@ -1,11 +1,10 @@
-package sender
+package e2e
 
 import (
 	"context"
 	"errors"
-	dom "gitlab.com/f_mancini/distribuitedOrderedMulticast"
-	pb "gitlab.com/f_mancini/distribuitedOrderedMulticast/sender/service"
-	sender "gitlab.com/f_mancini/distribuitedOrderedMulticast/sender/service"
+	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/communication"
+	e2egrpc "gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/e2e/grpc"
 	"google.golang.org/grpc"
 	"log"
 	"math/rand"
@@ -30,7 +29,7 @@ func init() {
 type senderMetadata struct {
 	address string
 	conn    *grpc.ClientConn
-	client  sender.SenderClient
+	client  e2egrpc.E2EClient
 	counter int
 	delay   int // Seconds
 	rnd     *rand.Rand
@@ -56,7 +55,7 @@ func ConnectWithDelay(address string, delay int) (*GrpcSender, error) {
 			return nil, err
 		}
 		gs = new(senderMetadata)
-		gs.client = pb.NewSenderClient(conn)
+		gs.client = e2egrpc.NewE2EClient(conn)
 		gs.conn = conn
 		gs.counter = 0
 		gs.address = address
@@ -73,7 +72,7 @@ func ConnectWithDelay(address string, delay int) (*GrpcSender, error) {
 	return &GrpcSender{gs}, nil
 }
 
-func (gs *GrpcSender) Send(streamId string, message dom.Message) error {
+func (gs *GrpcSender) Send(streamId string, message communication.Message) error {
 
 	if gs.meta == nil {
 		return errors.New("connectionClosed")
@@ -86,7 +85,7 @@ func (gs *GrpcSender) Send(streamId string, message dom.Message) error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
-	_, err := gs.meta.client.Send(ctx, &pb.Message{Id: streamId, Metadata: message.Metadata, Payload: message.Payload})
+	_, err := gs.meta.client.Send(ctx, &e2egrpc.Message{Id: streamId, Metadata: message.Metadata, Payload: message.Payload})
 	return err
 }
 

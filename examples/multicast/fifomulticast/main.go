@@ -3,10 +3,9 @@ package main
 import (
 	"bufio"
 	"fmt"
-	dom "gitlab.com/f_mancini/distribuitedOrderedMulticast"
-	"gitlab.com/f_mancini/distribuitedOrderedMulticast/multicast"
-	"gitlab.com/f_mancini/distribuitedOrderedMulticast/multicast/bmulticast"
-	"gitlab.com/f_mancini/distribuitedOrderedMulticast/sender"
+	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/communication"
+	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/e2e"
+	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/multicast"
 	"google.golang.org/grpc"
 	"log"
 	"net"
@@ -15,10 +14,10 @@ import (
 )
 
 type consumer struct {
-	ch chan dom.Message
+	ch chan communication.Message
 }
 
-func (c consumer) Deliver(message dom.Message) error {
+func (c consumer) Deliver(message communication.Message) error {
 	log.Printf("Processing new message")
 	c.ch <- message
 	return nil
@@ -38,7 +37,7 @@ func main() {
 	}
 
 	s := grpc.NewServer()
-	err = sender.Register(s)
+	err = e2e.Register(s)
 	if err != nil {
 		log.Fatalf("failed to register: %v", err)
 	}
@@ -63,19 +62,23 @@ func main() {
 			log.Fatalf("failed to read port: %v", err)
 		}
 		address := fmt.Sprintf("localhost:%d", port)
-		grpcSender, err := sender.ConnectWithDelay(address, 2000)
+		grpcSender, err := e2e.ConnectWithDelay(address, 2000)
 		if err != nil {
 			log.Printf("failed to connect: %v", err)
 		}
 
-		ports = append(ports, multicast.Target{Address: address, Sender: grpcSender})
+		ports = append(ports, multicast.Target{Address: address, Sender: grpcSender, Id: address})
 	}
 
-	deliverer := consumer{make(chan dom.Message)}
+	deliverer := consumer{make(chan communication.Message)}
 
-	multicaster, err := bmulticast.New("deadbeef", deliverer, ports)
+	bmulticaster := new(multicast.Bmulticast)
+	bmulticaster.Init("deadbeef", deliverer, ports)
 
-	err = sender.AddDeliverer("deadbeef", multicaster)
+	fifomulticaster := new(multicast.FifoMulticast)
+	fifomulticaster.Init("deadbeef", fmt.Sprintf("localhost:%d", port), bmulticaster, ports)
+
+	err = e2e.AddDeliverer("deadbeef", fifomulticaster)
 
 	if err != nil {
 		log.Fatalf("failed to add channel: %v", err)
@@ -84,6 +87,7 @@ func main() {
 	log.Printf("Ready to receive message")
 
 	go func() {
+		log.Printf("Start")
 		for {
 			select {
 			case message := <-deliverer.ch:
@@ -101,14 +105,12 @@ func main() {
 		text, _ := reader.ReadString('\n')
 		//fmt.Println(text)
 
-		err = multicaster.SendToAll(dom.Message{
-			Metadata: header,
-			Payload:  []byte(text),
-		})
-
-		if err != nil {
-			log.Fatalf("could not send message: %v", err)
-		}
+		go func() {
+			err := fifomulticaster.SendToAll(communication.NewMessage([]byte(text)))
+			if err != nil {
+				log.Fatalf("could not send message: %v", err)
+			}
+		}()
 
 	}
 

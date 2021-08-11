@@ -1,16 +1,16 @@
-package sender
+package e2e
 
 import (
 	"errors"
-	com "gitlab.com/f_mancini/distribuitedOrderedMulticast"
-	pb "gitlab.com/f_mancini/distribuitedOrderedMulticast/sender/service"
+	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/communication"
+	e2egrpc "gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/e2e/grpc"
 	"google.golang.org/grpc"
 	"sync"
 )
 
 type deliverers struct {
 	mu      sync.RWMutex
-	streams map[string]com.Deliverer
+	streams map[string]communication.Deliverer
 }
 
 var (
@@ -18,10 +18,10 @@ var (
 )
 
 func init() {
-	dlvs.streams = make(map[string]com.Deliverer)
+	dlvs.streams = make(map[string]communication.Deliverer)
 }
 
-func AddDeliverer(id string, deliverer com.Deliverer) (err error) {
+func AddDeliverer(id string, deliverer communication.Deliverer) (err error) {
 	dlvs.mu.Lock()
 	defer dlvs.mu.Unlock()
 
@@ -36,6 +36,6 @@ func AddDeliverer(id string, deliverer com.Deliverer) (err error) {
 }
 
 func Register(s grpc.ServiceRegistrar) (err error) {
-	pb.RegisterSenderServer(s, &server{})
+	e2egrpc.RegisterE2EServer(s, &server{})
 	return
 }
