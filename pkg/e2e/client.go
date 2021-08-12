@@ -82,7 +82,7 @@ func (gs *GrpcSender) Send(streamId string, message communication.Message) error
 		time.Sleep(time.Duration(gs.meta.rnd.Intn(gs.meta.delay)) * time.Millisecond)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10000)
 	defer cancel()
 
 	_, err := gs.meta.client.Send(ctx, &e2egrpc.Message{Id: streamId, Metadata: message.Metadata, Payload: message.Payload})

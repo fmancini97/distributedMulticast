@@ -78,6 +78,7 @@ func ConfigPool(numThreads int) error {
 	return nil
 }
 
+// TODO Deadlock: Cambiare!!!!!
 func processMessages(quitCh chan bool, messageCh chan sendData) {
 	for {
 		select {

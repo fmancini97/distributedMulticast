@@ -14,8 +14,8 @@ import (
 
 const fifoHeader = "fifo-multicast"
 
-type FifoMulticast struct {
-	streamId    string
+type fifoMulticast struct {
+	mtId        string
 	clientId    string
 	counter     uint64
 	targets     map[string]*target
@@ -23,44 +23,76 @@ type FifoMulticast struct {
 	multicaster Multicast
 }
 
+func (fifom *fifoMulticast) getGroup() ([]string, error) {
+	group := make([]string, 0)
+	for _, elem := range fifom.targets {
+		group = append(group, elem.id)
+	}
+
+	return group, nil
+}
+
+func (fifom *fifoMulticast) getMTId() (string, error) {
+	return fifom.mtId, nil
+}
+
+func (fifom *fifoMulticast) getClientId() (string, error) {
+	return fifom.clientId, nil
+}
+
 type target struct {
 	id            string
 	counter       uint64
-	holdBackQueue heap.Interface
+	holdBackQueue *priorityqueue.PriorityQueue
 	mu            sync.Mutex
 }
 
-func (fifom *FifoMulticast) Init(streamId, clientId string, multicaster Multicast, targets []Target) {
+func (fifom *fifoMulticast) Init(multicaster Multicast) error {
+
+	clientId, err := multicaster.getClientId()
+	if err != nil {
+		return err
+	}
+
+	mtId, err := multicaster.getMTId()
+	if err != nil {
+		return err
+	}
 
 	targetsMeta := make(map[string]*target)
 
-	for _, t := range targets {
+	group, err := multicaster.getGroup()
+	if err != nil {
+		return err
+	}
+
+	for _, member := range group {
 		pq := make(priorityqueue.PriorityQueue, 0)
 		heap.Init(&pq)
 
-		targetData := &target{id: t.Id, holdBackQueue: &pq}
+		targetData := &target{id: member, holdBackQueue: &pq}
 
-		targetsMeta[t.Id] = targetData
+		targetsMeta[member] = targetData
 	}
 
-	pq := make(priorityqueue.PriorityQueue, 0)
-	heap.Init(&pq)
+	deliverer, err := multicaster.decorate(fifom)
 
-	targetsMeta[clientId] = &target{id: clientId, holdBackQueue: &pq}
+	if err != nil {
+		return err
+	}
 
-	deliverer := multicaster.getDeliverer()
-
-	fifom.streamId = streamId
+	fifom.mtId = mtId
 	fifom.clientId = clientId
 	fifom.counter = 0
 	fifom.targets = targetsMeta
 	fifom.deliverer = deliverer
 	fifom.multicaster = multicaster
 
-	multicaster.setDeliverer(fifom)
+	return nil
+
 }
 
-func (fifom *FifoMulticast) SendToAll(message communication.Message) error {
+func (fifom *fifoMulticast) SendToAll(message communication.Message) error {
 	counter := atomic.AddUint64(&fifom.counter, 1)
 
 	message.Metadata[fmt.Sprintf("%s:counter", fifoHeader)] = strconv.FormatUint(counter, 10)
@@ -70,7 +102,7 @@ func (fifom *FifoMulticast) SendToAll(message communication.Message) error {
 	return fifom.multicaster.SendToAll(message)
 }
 
-func (fifom *FifoMulticast) Deliver(message communication.Message) error {
+func (fifom *fifoMulticast) Deliver(message communication.Message) error {
 
 	log.Printf("FIFO - New message: %s\n", message)
 
@@ -96,7 +128,9 @@ func (fifom *FifoMulticast) Deliver(message communication.Message) error {
 		}
 		targetData.counter++
 
-		for i := 0; i < targetData.holdBackQueue.Len(); i++ {
+		len := targetData.holdBackQueue.Len()
+
+		for i := 0; i < len; i++ {
 			element := heap.Pop(targetData.holdBackQueue).(*priorityqueue.Item)
 			if element.Priority == targetData.counter+1 {
 				err := fifom.deliverer.Deliver(element.Value.(communication.Message))
@@ -104,6 +138,7 @@ func (fifom *FifoMulticast) Deliver(message communication.Message) error {
 					return err
 				}
 				targetData.counter++
+
 			} else {
 				heap.Push(targetData.holdBackQueue, element)
 				break
@@ -119,10 +154,26 @@ func (fifom *FifoMulticast) Deliver(message communication.Message) error {
 	return nil
 }
 
-func (fifom FifoMulticast) setDeliverer(deliverer communication.Deliverer) {
+func (fifom *fifoMulticast) decorate(deliverer communication.Deliverer) (communication.Deliverer, error) {
+	oldDeliverer := fifom.deliverer
 	fifom.deliverer = deliverer
+	return oldDeliverer, nil
 }
 
-func (fifom FifoMulticast) getDeliverer() communication.Deliverer {
-	return fifom.deliverer
+func NewFifoMulticast(container *Container) (*Container, error) {
+	if container == nil || container.dlv == nil || container.mlt == nil {
+		return nil, errors.New("notInitialized")
+	}
+
+	fifoMulticaster := new(fifoMulticast)
+
+	err := fifoMulticaster.Init(container.mlt)
+	if err != nil {
+		return nil, err
+	}
+
+	container.mlt = fifoMulticaster
+
+	return container, nil
+
 }

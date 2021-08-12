@@ -18,12 +18,18 @@ type consumer struct {
 }
 
 func (c consumer) Deliver(message communication.Message) error {
-	log.Printf("Processing new message")
+	log.Printf("DELIVERER - %s", message)
 	c.ch <- message
 	return nil
 }
 
 func main() {
+
+	if len(os.Args) < 2 {
+		log.Printf("Usage: %s programPort otherPort1 othrePort2...", os.Args[0])
+		return
+	}
+
 	// Taking client port
 	portString := os.Args[1]
 	port, err := strconv.Atoi(portString)
@@ -72,13 +78,19 @@ func main() {
 
 	deliverer := consumer{make(chan communication.Message)}
 
-	bmulticaster := new(multicast.Bmulticast)
-	bmulticaster.Init("deadbeef", deliverer, ports)
+	multicaster, err := multicast.NewBMulticast("deadbeef", fmt.Sprintf("localhost:%d", port), deliverer, ports)
 
-	fifomulticaster := new(multicast.FifoMulticast)
-	fifomulticaster.Init("deadbeef", fmt.Sprintf("localhost:%d", port), bmulticaster, ports)
+	if err != nil {
+		log.Fatalf("Error in creating multicaster: %s", err)
+	}
 
-	err = e2e.AddDeliverer("deadbeef", fifomulticaster)
+	multicaster, err = multicast.NewFifoMulticast(multicaster)
+
+	if err != nil {
+		log.Fatalf("Error in creating multicaster: %s", err)
+	}
+
+	err = e2e.AddDeliverer("deadbeef", multicaster)
 
 	if err != nil {
 		log.Fatalf("failed to add channel: %v", err)
@@ -91,7 +103,7 @@ func main() {
 		for {
 			select {
 			case message := <-deliverer.ch:
-				log.Printf("New message: Header: %s - Payload: %s", message, string(message.Payload))
+				log.Printf("APP - New message received: Header: %s - Payload: %s", message, string(message.Payload))
 			}
 		}
 	}()
@@ -106,7 +118,7 @@ func main() {
 		//fmt.Println(text)
 
 		go func() {
-			err := fifomulticaster.SendToAll(communication.NewMessage([]byte(text)))
+			err := multicaster.SendToAll(communication.NewMessage([]byte(text)))
 			if err != nil {
 				log.Fatalf("could not send message: %v", err)
 			}
