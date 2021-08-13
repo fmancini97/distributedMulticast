@@ -3,10 +3,10 @@ package e2e
 import (
 	"context"
 	"errors"
+	log "github.com/sirupsen/logrus"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/communication"
 	e2egrpc "gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/e2e/grpc"
 	"google.golang.org/grpc"
-	"log"
 	"math/rand"
 	"sync"
 	"time"
@@ -22,7 +22,6 @@ var (
 )
 
 func init() {
-	log.Println("Initializing package")
 	conns.connections = make(map[string]*senderMetadata)
 }
 
@@ -44,6 +43,10 @@ func Connect(address string) (*GrpcSender, error) {
 }
 
 func ConnectWithDelay(address string, delay int) (*GrpcSender, error) {
+	logger := e2eLog.WithField("address", address)
+
+	logger.Debug("Connecting")
+
 	conns.mu.Lock()
 	defer conns.mu.Unlock()
 
@@ -65,7 +68,8 @@ func ConnectWithDelay(address string, delay int) (*GrpcSender, error) {
 		}
 
 		conns.connections[address] = gs
-
+	} else {
+		log.WithField("connection_info", gs).Debug("Connection already exists")
 	}
 	gs.counter++
 
@@ -73,7 +77,8 @@ func ConnectWithDelay(address string, delay int) (*GrpcSender, error) {
 }
 
 func (gs *GrpcSender) Send(streamId string, message communication.Message) error {
-
+	logger := e2eLog.WithField("stream_id", streamId)
+	logger.WithField("message", message).Debug("Sending message")
 	if gs.meta == nil {
 		return errors.New("connectionClosed")
 	}
@@ -97,6 +102,9 @@ func (gs *GrpcSender) Close() error {
 		return errors.New("connectionClosed")
 	}
 
+	logger := e2eLog.WithField("connection", meta)
+
+	logger.Debug("Closing")
 	conns.mu.Lock()
 	defer conns.mu.Unlock()
 
@@ -104,6 +112,7 @@ func (gs *GrpcSender) Close() error {
 
 	meta.counter--
 	if meta.counter == 0 {
+		logger.Debug()
 		delete(conns.connections, meta.address)
 		err := meta.conn.Close()
 		if err != nil {

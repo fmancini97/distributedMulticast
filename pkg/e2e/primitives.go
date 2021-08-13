@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"errors"
+	log "github.com/sirupsen/logrus"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/communication"
 	e2egrpc "gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/e2e/grpc"
 	"google.golang.org/grpc"
@@ -14,11 +15,13 @@ type deliverers struct {
 }
 
 var (
-	dlvs deliverers
+	dlvs   deliverers
+	e2eLog *log.Entry
 )
 
 func init() {
 	dlvs.streams = make(map[string]communication.Deliverer)
+	e2eLog = log.WithField("layer", "e2e")
 }
 
 func AddDeliverer(id string, deliverer communication.Deliverer) (err error) {

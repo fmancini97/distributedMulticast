@@ -5,11 +5,11 @@ import (
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/communication"
 )
 
-type LocalSender struct {
+type Sender struct {
 	deliverer communication.Deliverer
 }
 
-func (ls *LocalSender) Send(streamId string, message communication.Message) error {
+func (ls *Sender) Send(streamId string, message communication.Message) error {
 	if ls.deliverer == nil {
 		return errors.New("closed")
 	}
@@ -17,11 +17,11 @@ func (ls *LocalSender) Send(streamId string, message communication.Message) erro
 
 }
 
-func (ls *LocalSender) Close() error {
+func (ls *Sender) Close() error {
 	ls.deliverer = nil
 	return nil
 }
 
-func New(deliverer communication.Deliverer) *LocalSender {
-	return &LocalSender{deliverer: deliverer}
+func New(deliverer communication.Deliverer) *Sender {
+	return &Sender{deliverer: deliverer}
 }

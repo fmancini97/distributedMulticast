@@ -1,129 +1,77 @@
 package main
 
 import (
-	"bufio"
-	"fmt"
+	log "github.com/sirupsen/logrus"
+	"gitlab.com/f_mancini/distribuitedOrderedMulticast/internal/simpledeliverer"
+	"gitlab.com/f_mancini/distribuitedOrderedMulticast/internal/utils"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/communication"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/e2e"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/multicast"
-	"google.golang.org/grpc"
-	"log"
-	"net"
 	"os"
-	"strconv"
 )
-
-type consumer struct {
-	ch chan communication.Message
-}
-
-func (c consumer) Deliver(message communication.Message) error {
-	log.Printf("DELIVERER - %s", message)
-	c.ch <- message
-	return nil
-}
 
 func main() {
 
-	if len(os.Args) < 2 {
-		log.Printf("Usage: %s programPort otherPort1 othrePort2...", os.Args[0])
+	customFormatter := new(log.TextFormatter)
+	customFormatter.TimestampFormat = "2006-01-02 15:04:05"
+	customFormatter.FullTimestamp = true
+	log.SetFormatter(customFormatter)
+	log.SetLevel(log.DebugLevel)
+
+	logger := log.WithField("app", "example/fifomulticast")
+
+	if len(os.Args) < 3 {
+		logger.Warnf("Usage: %s programAddress mtId address1 address2...", os.Args[0])
 		return
 	}
 
 	// Taking client port
-	portString := os.Args[1]
-	port, err := strconv.Atoi(portString)
-	if err != nil {
-		log.Fatalf("failed to read port: %v", err)
-	}
+	programAddress := os.Args[1]
 
-	lis, err := net.Listen("tcp", fmt.Sprintf("localhost:%d", port))
-	if err != nil {
-		log.Fatalf("failed to listen: %v", err)
-	}
-
-	s := grpc.NewServer()
-	err = e2e.Register(s)
-	if err != nil {
-		log.Fatalf("failed to register: %v", err)
-	}
-
-	go func() {
-		log.Printf("server listening at %v", lis.Addr())
-		if err := s.Serve(lis); err != nil {
-			log.Fatalf("failed to serve: %v", err)
-		}
-	}()
-
-	log.Printf("Initializing multicast...")
-
-	// Taking other ports
-	portsString := os.Args[2:]
-
-	ports := make([]multicast.Target, 0)
-
-	for _, portString = range portsString {
-		port, err := strconv.Atoi(portString)
-		if err != nil {
-			log.Fatalf("failed to read port: %v", err)
-		}
-		address := fmt.Sprintf("localhost:%d", port)
-		grpcSender, err := e2e.ConnectWithDelay(address, 2000)
-		if err != nil {
-			log.Printf("failed to connect: %v", err)
-		}
-
-		ports = append(ports, multicast.Target{Address: address, Sender: grpcSender, Id: address})
-	}
-
-	deliverer := consumer{make(chan communication.Message)}
-
-	multicaster, err := multicast.NewBMulticast("deadbeef", fmt.Sprintf("localhost:%d", port), deliverer, ports)
+	err := utils.InitializeServer(programAddress)
 
 	if err != nil {
-		log.Fatalf("Error in creating multicaster: %s", err)
+		logger.WithField("error", err).Fatalf("Failed to initialize server")
+	}
+
+	logger.Info("Initializing multicast...")
+
+	addresses := os.Args[3:]
+
+	connections, err := utils.InitializeConnections(addresses, 2000)
+
+	if err != nil {
+		logger.WithField("error", err).Fatalf("Failed to initialize connections")
+	}
+
+	msgCh := make(chan communication.Message)
+
+	deliverer := simpledeliverer.New(msgCh)
+
+	mtId := os.Args[2]
+
+	multicaster, err := multicast.NewBMulticast(mtId, programAddress, deliverer, connections)
+
+	if err != nil {
+		logger.WithField("error", err).Fatalf("Error in creating multicaster")
 	}
 
 	multicaster, err = multicast.NewFifoMulticast(multicaster)
 
 	if err != nil {
-		log.Fatalf("Error in creating multicaster: %s", err)
+		logger.WithField("error", err).Fatalf("Error in creating multicaster")
 	}
 
-	err = e2e.AddDeliverer("deadbeef", multicaster)
+	err = e2e.AddDeliverer(mtId, multicaster)
 
 	if err != nil {
-		log.Fatalf("failed to add channel: %v", err)
+		logger.WithField("error", err).Fatal("Failed to add deliverer")
 	}
 
-	log.Printf("Ready to receive message")
+	logger.Info("Ready to receive message")
 
-	go func() {
-		log.Printf("Start")
-		for {
-			select {
-			case message := <-deliverer.ch:
-				log.Printf("APP - New message received: Header: %s - Payload: %s", message, string(message.Payload))
-			}
-		}
-	}()
+	go utils.PrintMessages(msgCh, logger)
 
-	reader := bufio.NewReader(os.Stdin)
-	header := make(map[string]string)
-	header["ID"] = "deadbeef"
-	for {
-
-		fmt.Print("Enter text: ")
-		text, _ := reader.ReadString('\n')
-		//fmt.Println(text)
-
-		go func() {
-			err := multicaster.SendToAll(communication.NewMessage([]byte(text)))
-			if err != nil {
-				log.Fatalf("could not send message: %v", err)
-			}
-		}()
-
-	}
+	utils.StdinSend(mtId, multicaster, logger)
 
 }

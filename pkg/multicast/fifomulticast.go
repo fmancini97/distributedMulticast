@@ -4,15 +4,23 @@ import (
 	"container/heap"
 	"errors"
 	"fmt"
+	log "github.com/sirupsen/logrus"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/internal/priorityqueue"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/communication"
-	"log"
 	"strconv"
 	"sync"
 	"sync/atomic"
 )
 
 const fifoHeader = "fifo-multicast"
+
+var (
+	fifoLog *log.Entry
+)
+
+func init() {
+	fifoLog = log.WithField("layer", "fifomulticast")
+}
 
 type fifoMulticast struct {
 	mtId        string
@@ -99,12 +107,14 @@ func (fifom *fifoMulticast) SendToAll(message communication.Message) error {
 
 	message.Metadata[fmt.Sprintf("%s:clientId", fifoHeader)] = fifom.clientId
 
+	fifoLog.WithFields(log.Fields{"client_id": fifom.clientId, "counter": counter, "message": message}).Debug("Multicasting message")
+
 	return fifom.multicaster.SendToAll(message)
 }
 
 func (fifom *fifoMulticast) Deliver(message communication.Message) error {
 
-	log.Printf("FIFO - New message: %s\n", message)
+	fifoLog.WithField("message", message).Debug("New message received")
 
 	counter, err := strconv.ParseUint(message.Metadata[fmt.Sprintf("%s:counter", fifoHeader)], 10, 64)
 
@@ -112,40 +122,46 @@ func (fifom *fifoMulticast) Deliver(message communication.Message) error {
 		return err
 	}
 
-	targetData, ok := fifom.targets[message.Metadata[fmt.Sprintf("%s:clientId", fifoHeader)]]
+	source, ok := fifom.targets[message.Metadata[fmt.Sprintf("%s:clientId", fifoHeader)]]
 
 	if !ok {
 		return errors.New("NotFound")
 	}
 
-	targetData.mu.Lock()
-	defer targetData.mu.Unlock()
+	logger := fifoLog.WithField("sourceId", source.id)
 
-	if counter == targetData.counter+1 {
+	source.mu.Lock()
+	defer source.mu.Unlock()
+
+	if counter == source.counter+1 {
+		logger.WithFields(log.Fields{"message": message, "counter": source.counter}).Debug("Delivering message")
 		err := fifom.deliverer.Deliver(message)
 		if err != nil {
 			return err
 		}
-		targetData.counter++
+		source.counter++
 
-		len := targetData.holdBackQueue.Len()
+		numElem := source.holdBackQueue.Len()
 
-		for i := 0; i < len; i++ {
-			element := heap.Pop(targetData.holdBackQueue).(*priorityqueue.Item)
-			if element.Priority == targetData.counter+1 {
-				err := fifom.deliverer.Deliver(element.Value.(communication.Message))
+		for i := 0; i < numElem; i++ {
+			element := heap.Pop(source.holdBackQueue).(*priorityqueue.Item)
+			if element.Priority == source.counter+1 {
+				message = element.Value.(communication.Message)
+				logger.WithFields(log.Fields{"message": message, "counter": source.counter}).Debug("Delivering message")
+				err := fifom.deliverer.Deliver(message)
 				if err != nil {
 					return err
 				}
-				targetData.counter++
+				source.counter++
 
 			} else {
-				heap.Push(targetData.holdBackQueue, element)
+				heap.Push(source.holdBackQueue, element)
 				break
 			}
 		}
 	} else {
-		heap.Push(targetData.holdBackQueue, &priorityqueue.Item{
+		logger.WithFields(log.Fields{"message": message, "counter": source.counter}).Debug("Putting message in the hold-back queue")
+		heap.Push(source.holdBackQueue, &priorityqueue.Item{
 			Value:    message,
 			Priority: counter,
 		})
