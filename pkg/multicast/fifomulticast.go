@@ -51,7 +51,7 @@ func (fifom *fifoMulticast) getClientId() (string, error) {
 type target struct {
 	id            string
 	counter       uint64
-	holdBackQueue *priorityqueue.PriorityQueue
+	holdBackQueue heap.Interface
 	mu            sync.Mutex
 }
 
