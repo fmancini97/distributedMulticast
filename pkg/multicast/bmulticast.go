@@ -9,7 +9,7 @@ import (
 )
 
 type bmulticast struct {
-	targets   []Target
+	targets   []E2EMember
 	deliverer communication.Deliverer
 	mtId      string
 	clientId  string
@@ -78,15 +78,15 @@ func (bm *bmulticast) getMTId() (string, error) {
 	return bm.mtId, nil
 }
 
-func (bm *bmulticast) Init(mtId, clientId string, deliverer communication.Deliverer, targets []Target) {
-	targets = append(targets, Target{clientId, "localhost", localsender.New(bm)})
+func (bm *bmulticast) Init(mtId, clientId string, deliverer communication.Deliverer, targets []E2EMember) {
+	targets = append(targets, E2EMember{clientId, "localhost", localsender.New(bm)})
 	bm.targets = targets
 	bm.deliverer = deliverer
 	bm.mtId = mtId
 	bm.clientId = clientId
 }
 
-func NewBMulticast(mtId, clientId string, deliverer communication.Deliverer, targets []Target) (*Container, error) {
+func NewBMulticast(mtId, clientId string, deliverer communication.Deliverer, targets []E2EMember) (*Container, error) {
 	bm := new(bmulticast)
 	bm.Init(mtId, clientId, deliverer, targets)
 	container := new(Container)

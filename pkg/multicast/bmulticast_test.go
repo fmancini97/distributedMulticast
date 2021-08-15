@@ -17,9 +17,9 @@ func TestBmulticast_Init(t *testing.T) {
 	ch := make(chan communication.Message)
 	smplDlv := simpledeliverer.New(ch)
 
-	members := make([]Target, 0)
+	members := make([]E2EMember, 0)
 
-	target := Target{
+	target := E2EMember{
 		Id:      "qwerty",
 		Address: "127.0.0.1",
 		Sender:  localsender.New(simpledeliverer.New(make(chan communication.Message))),
@@ -46,7 +46,7 @@ func TestBmulticast_Init(t *testing.T) {
 	for index, expectedMember := range members {
 		actualMember := bm.targets[index]
 		if expectedMember.Id != actualMember.Id || expectedMember.Address != actualMember.Address || expectedMember.Sender != actualMember.Sender {
-			t.Fatalf("Target mismatch - Expected: {Id: %s, Address: %s}, Actual: {Id: %s, Address: %s}",
+			t.Fatalf("E2EMember mismatch - Expected: {Id: %s, Address: %s}, Actual: {Id: %s, Address: %s}",
 				expectedMember.Id, expectedMember.Address, actualMember.Id, actualMember.Address)
 
 		}
@@ -61,12 +61,12 @@ func TestBmulticast_SendToAll(t *testing.T) {
 	ch := make(chan communication.Message)
 	smplDlv := simpledeliverer.New(ch)
 
-	members := make([]Target, 0)
+	members := make([]E2EMember, 0)
 
 	outputCh := make(chan communication.Message)
 
 	for i := 0; i < 2; i++ {
-		target := Target{
+		target := E2EMember{
 			Id:      fmt.Sprintf("qwerty%d", i),
 			Address: "127.0.0.1",
 			Sender:  localsender.New(simpledeliverer.New(outputCh)),
@@ -107,12 +107,12 @@ func TestBmulticast_Deliver(t *testing.T) {
 	ch := make(chan communication.Message)
 	smplDlv := simpledeliverer.New(ch)
 
-	members := make([]Target, 0)
+	members := make([]E2EMember, 0)
 
 	outputCh := make(chan communication.Message)
 
 	for i := 0; i < 2; i++ {
-		target := Target{
+		target := E2EMember{
 			Id:      fmt.Sprintf("qwerty%d", i),
 			Address: "127.0.0.1",
 			Sender:  localsender.New(simpledeliverer.New(outputCh)),

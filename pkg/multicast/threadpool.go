@@ -10,7 +10,7 @@ import (
 type sendData struct {
 	message  communication.Message
 	streamId string
-	tg       Target
+	tg       E2EMember
 	outputCh chan sendResult
 }
 

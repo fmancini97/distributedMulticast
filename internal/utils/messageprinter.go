@@ -9,7 +9,7 @@ func PrintMessages(msgCh chan communication.Message, logger *log.Entry) {
 	for {
 		select {
 		case message := <-msgCh:
-			logger.WithFields(log.Fields{"header": message.Metadata, "payload": message.Payload}).Info("New message")
+			logger.WithFields(log.Fields{"header": message.Metadata, "payload": string(message.Payload)}).Info("New message")
 		}
 	}
 }

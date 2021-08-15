@@ -33,10 +33,10 @@ func InitializeServer(programAddress string) error {
 
 }
 
-func InitializeConnections(addresses []string, delay int) ([]multicast.Target, error) {
+func InitializeConnections(addresses []string, delay int) ([]multicast.E2EMember, error) {
 	// Taking other connections
 
-	connections := make([]multicast.Target, 0)
+	connections := make([]multicast.E2EMember, 0)
 
 	for _, address := range addresses {
 		grpcSender, err := e2e.ConnectWithDelay(address, delay)
@@ -44,7 +44,7 @@ func InitializeConnections(addresses []string, delay int) ([]multicast.Target, e
 			return nil, err
 		}
 
-		connections = append(connections, multicast.Target{Address: address, Sender: grpcSender, Id: address})
+		connections = append(connections, multicast.E2EMember{Address: address, Sender: grpcSender, Id: address})
 	}
 
 	return connections, nil

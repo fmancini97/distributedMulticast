@@ -26,14 +26,14 @@ type fifoMulticast struct {
 	mtId        string
 	clientId    string
 	counter     uint64
-	targets     map[string]*target
+	members     map[string]*fifomember
 	deliverer   communication.Deliverer
 	multicaster Multicast
 }
 
 func (fifom *fifoMulticast) getGroup() ([]string, error) {
 	group := make([]string, 0)
-	for _, elem := range fifom.targets {
+	for _, elem := range fifom.members {
 		group = append(group, elem.id)
 	}
 
@@ -48,7 +48,7 @@ func (fifom *fifoMulticast) getClientId() (string, error) {
 	return fifom.clientId, nil
 }
 
-type target struct {
+type fifomember struct {
 	id            string
 	counter       uint64
 	holdBackQueue heap.Interface
@@ -67,7 +67,7 @@ func (fifom *fifoMulticast) Init(multicaster Multicast) error {
 		return err
 	}
 
-	targetsMeta := make(map[string]*target)
+	targetsMeta := make(map[string]*fifomember)
 
 	group, err := multicaster.getGroup()
 	if err != nil {
@@ -75,10 +75,12 @@ func (fifom *fifoMulticast) Init(multicaster Multicast) error {
 	}
 
 	for _, member := range group {
-		pq := make(priorityqueue.PriorityQueue, 0)
-		heap.Init(&pq)
+		pq := priorityqueue.New(func(i interface{}, i2 interface{}) bool {
+			return i.(uint64) < i2.(uint64)
+		})
+		heap.Init(pq)
 
-		targetData := &target{id: member, holdBackQueue: &pq}
+		targetData := &fifomember{id: member, holdBackQueue: pq}
 
 		targetsMeta[member] = targetData
 	}
@@ -92,7 +94,7 @@ func (fifom *fifoMulticast) Init(multicaster Multicast) error {
 	fifom.mtId = mtId
 	fifom.clientId = clientId
 	fifom.counter = 0
-	fifom.targets = targetsMeta
+	fifom.members = targetsMeta
 	fifom.deliverer = deliverer
 	fifom.multicaster = multicaster
 
@@ -122,7 +124,7 @@ func (fifom *fifoMulticast) Deliver(message communication.Message) error {
 		return err
 	}
 
-	source, ok := fifom.targets[message.Metadata[fmt.Sprintf("%s:clientId", fifoHeader)]]
+	source, ok := fifom.members[message.Metadata[fmt.Sprintf("%s:clientId", fifoHeader)]]
 
 	if !ok {
 		return errors.New("NotFound")

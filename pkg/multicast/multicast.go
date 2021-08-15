@@ -13,7 +13,7 @@ type Multicast interface {
 	getClientId() (string, error)
 }
 
-type Target struct {
+type E2EMember struct {
 	Id      string
 	Address string
 	Sender  communication.Sender
