@@ -18,7 +18,7 @@ func main() {
 	log.SetFormatter(customFormatter)
 	//log.SetLevel(log.DebugLevel)
 
-	logger := log.WithField("app", "example/secmulticast")
+	logger := log.WithField("app", "example/scmulticast")
 
 	if len(os.Args) < 3 {
 		logger.Warnf("Usage: %s programAddress mtId address1 address2...", os.Args[0])

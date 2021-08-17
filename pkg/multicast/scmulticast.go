@@ -25,21 +25,21 @@ var (
 )
 
 func init() {
-	scLog = log.WithField("layer", "fifomulticast")
+	scLog = log.WithField("layer", "scmulticast")
 }
 
 type scMulticast struct {
-	mtId          string
-	clientId      string
-	numMembers    int
-	timestampMu   sync.Mutex
-	timestamp     uint64
-	holdBackMu    sync.Mutex
-	holdBackQueue heap.Interface
-	waitingElems  map[string]*scElem
-	msgsCounters  map[string]uint64
-	deliverer     communication.Deliverer
-	multicaster   Multicast
+	mtId            string
+	clientId        string
+	numMembers      int
+	timestampMu     sync.Mutex
+	timestamp       uint64
+	holdBackMu      sync.Mutex
+	holdBackQueue   heap.Interface
+	waitingElems    map[string]*scElem
+	msgsCounters    map[string]uint64
+	deliverer       communication.Deliverer
+	fifoMulticaster *fifoMulticast
 }
 
 type scElem struct {
@@ -56,7 +56,7 @@ type scOrder struct {
 }
 
 func (scm *scMulticast) getGroup() ([]string, error) {
-	return scm.multicaster.getGroup()
+	return scm.fifoMulticaster.getGroup()
 }
 
 func (scm *scMulticast) getMTId() (string, error) {
@@ -90,7 +90,14 @@ func (scm *scMulticast) Init(multicaster Multicast) error {
 		msgCntrs[member] = 0
 	}
 
-	deliverer, err := multicaster.decorate(scm)
+	fifoMulticaster := new(fifoMulticast)
+
+	err = fifoMulticaster.Init(multicaster)
+	if err != nil {
+		return err
+	}
+
+	deliverer, err := fifoMulticaster.decorate(scm)
 
 	if err != nil {
 		return err
@@ -115,7 +122,7 @@ func (scm *scMulticast) Init(multicaster Multicast) error {
 	scm.waitingElems = make(map[string]*scElem)
 	scm.msgsCounters = msgCntrs
 	scm.deliverer = deliverer
-	scm.multicaster = multicaster
+	scm.fifoMulticaster = fifoMulticaster
 
 	return nil
 
@@ -125,10 +132,12 @@ func (scm *scMulticast) SendToAll(message communication.Message) error {
 
 	scm.timestampMu.Lock()
 	scm.timestamp++
-	timestamp := scm.timestamp
+	timestampScm := scm.timestamp
+	scm.fifoMulticaster.counter++
+	timestampFifo := scm.fifoMulticaster.counter
 	scm.timestampMu.Unlock()
 
-	timestampString := strconv.FormatUint(timestamp, 10)
+	timestampString := strconv.FormatUint(timestampScm, 10)
 
 	message.Metadata[fmt.Sprintf("%s:timestamp", scHeader)] = timestampString
 
@@ -138,9 +147,15 @@ func (scm *scMulticast) SendToAll(message communication.Message) error {
 
 	message.Metadata[fmt.Sprintf("%s:messageType", scHeader)] = string(scData)
 
-	scLog.WithFields(log.Fields{"client_id": scm.clientId, "timestamp": timestamp, "message": message}).Debug("Multicasting message")
+	scLog.WithFields(log.Fields{"client_id": scm.clientId, "timestamp": timestampScm, "message": message}).Debug("Multicasting message")
 
-	return scm.multicaster.SendToAll(message)
+	message.Metadata[fmt.Sprintf("%s:counter", fifoHeader)] = strconv.FormatUint(timestampFifo, 10)
+
+	message.Metadata[fmt.Sprintf("%s:clientId", fifoHeader)] = scm.clientId
+
+	fifoLog.WithFields(log.Fields{"client_id": scm.clientId, "counter": timestampFifo, "message": message}).Debug("Multicasting message")
+
+	return scm.fifoMulticaster.multicaster.SendToAll(message)
 }
 
 func (scm *scMulticast) Deliver(message communication.Message) error {
@@ -158,6 +173,7 @@ func (scm *scMulticast) Deliver(message communication.Message) error {
 	if timestamp > scm.timestamp {
 		scm.timestamp = timestamp
 	}
+	scm.timestamp++
 	scm.timestampMu.Unlock()
 
 	sourceId, ok := message.Metadata[fmt.Sprintf("%s:clientId", scHeader)]
@@ -195,12 +211,13 @@ func (scm *scMulticast) Deliver(message communication.Message) error {
 		scm.waitingElems[messageId] = scElm
 	}
 
+	sourceMsgTimestamp := scm.msgsCounters[sourceId]
+	if sourceMsgTimestamp < timestamp {
+		scm.msgsCounters[sourceId] = timestamp
+	}
+
 	switch scMessageType(messageType) {
 	case scData:
-		sourceMsgTimestamp := scm.msgsCounters[sourceId]
-		if sourceMsgTimestamp < timestamp {
-			scm.msgsCounters[sourceId] = timestamp
-		}
 
 		scElm.message = &message
 		scElm.timestamp = timestamp
@@ -209,23 +226,34 @@ func (scm *scMulticast) Deliver(message communication.Message) error {
 
 		scm.holdBackQueue.Push(&priorityqueue.Item{Value: scElm, Priority: scOrder{timestamp: timestamp, clientId: sourceId}})
 
-		metadata := make(map[string]string)
-
-		scm.timestampMu.Lock()
-		scm.timestamp++
-		ackTimestamp := scm.timestamp
-		scm.timestampMu.Unlock()
-
-		metadata[fmt.Sprintf("%s:timestamp", scHeader)] = strconv.FormatUint(ackTimestamp, 10)
-
-		metadata[fmt.Sprintf("%s:clientId", scHeader)] = scm.clientId
-
-		metadata[fmt.Sprintf("%s:messageId", scHeader)] = messageId
-
-		metadata[fmt.Sprintf("%s:messageType", scHeader)] = string(scAck)
-
 		go func() {
-			err = scm.multicaster.SendToAll(communication.Message{Metadata: metadata})
+
+			ackMessage := communication.NewMessage(nil)
+
+			scm.timestampMu.Lock()
+			scm.timestamp++
+			ackTimestamp := scm.timestamp
+			scm.fifoMulticaster.counter++
+			timestampFifo := scm.fifoMulticaster.counter
+			scm.timestampMu.Unlock()
+
+			ackMessage.Metadata[fmt.Sprintf("%s:timestamp", scHeader)] = strconv.FormatUint(ackTimestamp, 10)
+
+			ackMessage.Metadata[fmt.Sprintf("%s:clientId", scHeader)] = scm.clientId
+
+			ackMessage.Metadata[fmt.Sprintf("%s:messageId", scHeader)] = messageId
+
+			ackMessage.Metadata[fmt.Sprintf("%s:messageType", scHeader)] = string(scAck)
+
+			logger.WithField("ack", ackMessage).Debug("Multicasting ack")
+
+			ackMessage.Metadata[fmt.Sprintf("%s:counter", fifoHeader)] = strconv.FormatUint(timestampFifo, 10)
+
+			ackMessage.Metadata[fmt.Sprintf("%s:clientId", fifoHeader)] = scm.clientId
+
+			fifoLog.WithFields(log.Fields{"client_id": scm.clientId, "counter": timestampFifo, "message": ackMessage}).Debug("Multicasting message")
+
+			err = scm.fifoMulticaster.multicaster.SendToAll(ackMessage)
 			if err != nil {
 				logger.WithField("error", err).Error("Error while sending ack")
 			}
@@ -253,6 +281,7 @@ func (scm *scMulticast) Deliver(message communication.Message) error {
 
 		logger.WithFields(log.Fields{"message": *scElm.message, "timestamp": scElm.timestamp}).Debug("Delivering message")
 		err = scm.deliverer.Deliver(*scElm.message)
+
 		if err != nil {
 			return err
 		}

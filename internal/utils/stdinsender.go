@@ -16,6 +16,7 @@ func StdinSend(mtId string, multicaster multicast.Multicast, logger *log.Entry) 
 		reader := bufio.NewReader(os.Stdin)
 		fmt.Print("Enter text: ")
 		text, _ := reader.ReadString('\n')
+		text = text[:len(text)-1]
 
 		go func() {
 			logger.WithField("message", text).Info("Multicasting message")
