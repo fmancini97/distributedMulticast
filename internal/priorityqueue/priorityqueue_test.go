@@ -2,6 +2,7 @@ package priorityqueue
 
 import (
 	"container/heap"
+	"gitlab.com/f_mancini/distribuitedOrderedMulticast/internal/randstring"
 	"math/rand"
 	"testing"
 	"time"
@@ -75,16 +76,6 @@ type twoLevelPriority struct {
 	secondLevel string
 }
 
-var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
-
-func randSeq(n int) string {
-	b := make([]rune, n)
-	for i := range b {
-		b[i] = letters[rand.Intn(len(letters))]
-	}
-	return string(b)
-}
-
 func TestPriorityQueue_TwoLevelPriority(t *testing.T) {
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 
@@ -114,13 +105,13 @@ func TestPriorityQueue_TwoLevelPriority(t *testing.T) {
 		for j := 0; j < 2; j++ {
 			priority := twoLevelPriority{
 				firstLevel:  firstLevelValue,
-				secondLevel: randSeq(r.Intn(50)),
+				secondLevel: randstring.RandSeq(r.Intn(50)),
 			}
 			_, ok := items[priority]
 			for ok {
 				priority = twoLevelPriority{
 					firstLevel:  firstLevelValue,
-					secondLevel: randSeq(r.Intn(50)),
+					secondLevel: randstring.RandSeq(r.Intn(50)),
 				}
 				_, ok = items[priority]
 			}
@@ -146,8 +137,6 @@ func TestPriorityQueue_TwoLevelPriority(t *testing.T) {
 		actualItem := heap.Pop(pq).(*Item)
 
 		actualPriority := actualItem.Priority.(twoLevelPriority)
-
-		t.Log(actualPriority)
 
 		if priority.firstLevel == actualPriority.firstLevel && priority.secondLevel > actualPriority.secondLevel {
 			t.Fatalf("Wrong order: %s < %s", actualPriority.secondLevel, priority.secondLevel)

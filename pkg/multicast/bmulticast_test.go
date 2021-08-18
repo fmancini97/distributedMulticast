@@ -1,10 +1,16 @@
 package multicast
 
 import (
+	"encoding/binary"
+	"errors"
 	"fmt"
+	"gitlab.com/f_mancini/distribuitedOrderedMulticast/internal/chandeliverer"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/internal/localsender"
+	"gitlab.com/f_mancini/distribuitedOrderedMulticast/internal/randstring"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/internal/simpledeliverer"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/communication"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -13,20 +19,23 @@ func TestBmulticast_Init(t *testing.T) {
 
 	mtId := "testBMulticast"
 	clientId := "testId"
+	numTargets := 2
 
 	ch := make(chan communication.Message)
-	smplDlv := simpledeliverer.New(ch)
+	smplDlv := chandeliverer.New(ch)
 
 	members := make([]E2EMember, 0)
 
-	target := E2EMember{
-		Id:      "qwerty",
-		Address: "127.0.0.1",
-		Sender:  localsender.New(simpledeliverer.New(make(chan communication.Message))),
+	for i := 0; i < numTargets; i++ {
+
+		target := E2EMember{
+			Id:      fmt.Sprintf("qwerty-%d", i),
+			Address: "127.0.0.1",
+			Sender:  localsender.New(chandeliverer.New(make(chan communication.Message)), 2000),
+		}
+
+		members = append(members, target)
 	}
-
-	members = append(members, target)
-
 	bm := new(bmulticast)
 
 	bm.Init(mtId, clientId, smplDlv, members)
@@ -57,20 +66,25 @@ func TestBmulticast_Init(t *testing.T) {
 func TestBmulticast_SendToAll(t *testing.T) {
 	mtId := "testBMulticast"
 	clientId := "testId"
+	messageString := randstring.RandSeq(10)
+	numMembers := 3
 
-	ch := make(chan communication.Message)
-	smplDlv := simpledeliverer.New(ch)
+	appCh := make(chan communication.Message)
+	smplDlv := chandeliverer.New(appCh)
 
 	members := make([]E2EMember, 0)
 
-	outputCh := make(chan communication.Message)
+	outputCh := make([]chan communication.Message, 0)
 
-	for i := 0; i < 2; i++ {
+	for i := 0; i < numMembers-1; i++ {
+		ch := make(chan communication.Message)
 		target := E2EMember{
 			Id:      fmt.Sprintf("qwerty%d", i),
 			Address: "127.0.0.1",
-			Sender:  localsender.New(simpledeliverer.New(outputCh)),
+			Sender:  localsender.New(chandeliverer.New(ch), 2000),
 		}
+
+		outputCh = append(outputCh, ch)
 
 		members = append(members, target)
 	}
@@ -82,40 +96,68 @@ func TestBmulticast_SendToAll(t *testing.T) {
 	go func() {
 		err := bm.SendToAll(communication.Message{
 			Metadata: make(map[string]string),
-			Payload:  nil,
+			Payload:  []byte(messageString),
 		})
 		if err != nil {
-			t.Errorf("Error while sending message: %s", err)
+			t.Errorf("Error while sending messageString: %s", err)
 			return
 		}
 	}()
 
-	for i := 0; i < len(members)+1; i++ {
-		select {
-		case <-ch:
-		case <-outputCh:
-		case <-time.After(time.Second * 60):
-			t.Fatalf("Only %d/%d members have received the message", i, len(members)+1)
-		}
+	var wg sync.WaitGroup
+	wgChan := make(chan bool)
+	errCh := make(chan error)
+	wg.Add(numMembers)
+
+	for _, ch := range outputCh {
+		go waitMessage(&wg, ch, messageString, errCh)
 	}
+
+	go waitMessage(&wg, appCh, messageString, errCh)
+
+	go func() {
+		wg.Wait()
+		wgChan <- true
+	}()
+
+	select {
+	case <-wgChan:
+	case err := <-errCh:
+		t.Fatalf("Error while receiving messages: %s", err)
+	case <-time.After(time.Second * 60):
+		t.Fatalf("Missing messages")
+	}
+
+}
+
+func waitMessage(wg *sync.WaitGroup, appCh chan communication.Message, messageString string, errCh chan error) {
+	func() {
+		defer wg.Done()
+		message := <-appCh
+		if string(message.Payload) != messageString {
+			errCh <- errors.New(fmt.Sprintf("wrongMessage: expected: %s - actual: %s", messageString, string(message.Payload)))
+		}
+	}()
 }
 
 func TestBmulticast_Deliver(t *testing.T) {
 	mtId := "testBMulticast"
 	clientId := "testId"
+	messageString := randstring.RandSeq(20)
+	numMembers := 3
 
 	ch := make(chan communication.Message)
-	smplDlv := simpledeliverer.New(ch)
+	smplDlv := chandeliverer.New(ch)
 
 	members := make([]E2EMember, 0)
 
 	outputCh := make(chan communication.Message)
 
-	for i := 0; i < 2; i++ {
+	for i := 0; i < numMembers-1; i++ {
 		target := E2EMember{
 			Id:      fmt.Sprintf("qwerty%d", i),
 			Address: "127.0.0.1",
-			Sender:  localsender.New(simpledeliverer.New(outputCh)),
+			Sender:  localsender.New(chandeliverer.New(outputCh), 2000),
 		}
 
 		members = append(members, target)
@@ -125,20 +167,151 @@ func TestBmulticast_Deliver(t *testing.T) {
 
 	bm.Init(mtId, clientId, smplDlv, members)
 
+	errCh := make(chan error)
+
 	go func() {
 		err := bm.Deliver(communication.Message{
 			Metadata: make(map[string]string),
-			Payload:  nil,
+			Payload:  []byte(messageString),
 		})
 		if err != nil {
-			t.Errorf("Error while delivering message: %s", err)
-			return
+			errCh <- err
 		}
 	}()
 
 	select {
-	case <-ch:
+	case message := <-ch:
+		if string(message.Payload) != messageString {
+			t.Fatalf("wrongMessage: expected: %s - actual: %s", messageString, string(message.Payload))
+		}
+	case err := <-errCh:
+		t.Fatalf("Error while delivering message: %s", err)
 	case <-time.After(time.Second * 60):
 		t.Fatalf("Message not delivered")
 	}
+}
+
+func TestBMulticast(t *testing.T) {
+	numMembers := 3
+	delay := 1000
+	messageToSent := 100
+
+	err := ConfigPool(messageToSent)
+	if err != nil {
+		t.Fatalf("Error while configuring pool: %s", err)
+	}
+
+	counter := uint64(0)
+
+	members, chDeliverers, err := initTestBMulticast(numMembers, delay)
+
+	if err != nil {
+		t.Fatalf("Error while initialializing BMultitcast: %s", err)
+	}
+
+	errCh := make(chan error)
+	for _, multicaster := range members {
+		multicaster := multicaster
+
+		for i := 0; i < messageToSent; i++ {
+			go func() {
+				b := make([]byte, 8)
+				binary.LittleEndian.PutUint64(b, atomic.AddUint64(&counter, 1))
+
+				err := multicaster.SendToAll(communication.NewMessage(b))
+				if err != nil {
+					errCh <- err
+				}
+			}()
+		}
+
+	}
+
+	var wg sync.WaitGroup
+	wgChan := make(chan bool)
+	wg.Add(numMembers)
+	for _, ch := range chDeliverers {
+		ch := ch
+		go func() {
+			for messages := make(map[uint64]bool); len(messages) < messageToSent*numMembers; {
+				select {
+				case message := <-ch:
+					messages[binary.LittleEndian.Uint64(message.Payload)] = true
+				case <-time.After(time.Second * 60):
+					errCh <- errors.New("timeoutExceeded")
+					return
+				}
+			}
+
+			wg.Done()
+		}()
+	}
+
+	go func() {
+		wg.Wait()
+		wgChan <- true
+		close(wgChan)
+	}()
+
+	select {
+	case <-wgChan:
+		break
+	case err := <-errCh:
+		t.Fatalf("Error while multicasting: %s", err)
+	}
+}
+
+func initTestBMulticast(numMembers int, delay int) (map[string]*Container, map[string]chan communication.Message, error) {
+	members := make(map[string]*Container, numMembers)
+	chDeliverers := make(map[string]chan communication.Message, numMembers)
+	appDeliverers := make(map[string]*chandeliverer.ChanDeliverer, numMembers)
+	e2eDelivereres := make(map[string]*simpledeliverer.SimpleDeliverer, numMembers)
+
+	multicastId := randstring.RandSeq(20)
+
+	for i := 0; i < numMembers; i++ {
+		clientId := randstring.RandSeq(10)
+		for _, ok := e2eDelivereres[clientId]; ok; _, ok = e2eDelivereres[clientId] {
+			clientId = randstring.RandSeq(10)
+		}
+
+		lD := new(simpledeliverer.SimpleDeliverer)
+
+		e2eDelivereres[clientId] = lD
+
+		outputCh := make(chan communication.Message, 50)
+
+		smplDlv := chandeliverer.New(outputCh)
+
+		chDeliverers[clientId] = outputCh
+		appDeliverers[clientId] = smplDlv
+	}
+
+	for clientId, lclDlv := range e2eDelivereres {
+		group := make([]E2EMember, 0)
+		for cltId, lD := range e2eDelivereres {
+			if clientId != cltId {
+				member := E2EMember{
+					Id:      cltId,
+					Address: cltId,
+					Sender:  localsender.New(lD, delay),
+				}
+				group = append(group, member)
+			}
+		}
+
+		multicaster, err := NewBMulticast(multicastId, clientId, appDeliverers[clientId], group)
+
+		if err != nil {
+			return nil, nil, err
+		}
+
+		members[clientId] = multicaster
+
+		err = lclDlv.SetDeliverer(multicaster)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	return members, chDeliverers, nil
 }

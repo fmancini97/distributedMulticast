@@ -1,4 +1,4 @@
-package utils
+package serverinitializer
 
 import (
 	log "github.com/sirupsen/logrus"

@@ -2,7 +2,8 @@ package main
 
 import (
 	log "github.com/sirupsen/logrus"
-	"gitlab.com/f_mancini/distribuitedOrderedMulticast/internal/simpledeliverer"
+	"gitlab.com/f_mancini/distribuitedOrderedMulticast/internal/chandeliverer"
+	"gitlab.com/f_mancini/distribuitedOrderedMulticast/internal/serverinitializer"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/internal/utils"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/communication"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/e2e"
@@ -29,7 +30,7 @@ func main() {
 	// Taking client port
 	programAddress := os.Args[1]
 
-	err := utils.InitializeServer(programAddress)
+	err := serverinitializer.InitializeServer(programAddress)
 
 	if err != nil {
 		logger.WithField("error", err).Fatalf("Failed to initialize server")
@@ -48,7 +49,7 @@ func main() {
 
 	addresses := os.Args[4:]
 
-	connections, err := utils.InitializeConnections(addresses, 1000)
+	connections, err := serverinitializer.InitializeConnections(addresses, 1000)
 
 	if err != nil {
 		logger.WithField("error", err).Fatalf("Failed to initialize connections")
@@ -56,7 +57,7 @@ func main() {
 
 	msgCh := make(chan communication.Message)
 
-	deliverer := simpledeliverer.New(msgCh)
+	deliverer := chandeliverer.New(msgCh)
 
 	multicaster, err := multicast.NewBMulticast(mtId, programAddress, deliverer, connections)
 

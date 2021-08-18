@@ -1,18 +1,22 @@
 package simpledeliverer
 
-import "gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/communication"
+import (
+	"errors"
+	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/communication"
+)
 
 type SimpleDeliverer struct {
-	ch chan communication.Message
+	deliverer communication.Deliverer
 }
 
-func (s *SimpleDeliverer) Deliver(message communication.Message) error {
-	s.ch <- message
+func (lD *SimpleDeliverer) Deliver(message communication.Message) error {
+	if lD.deliverer == nil {
+		return errors.New("missing deliverer")
+	}
+	return lD.deliverer.Deliver(message)
+}
+
+func (lD *SimpleDeliverer) SetDeliverer(deliverer communication.Deliverer) error {
+	lD.deliverer = deliverer
 	return nil
-}
-
-func New(ch chan communication.Message) *SimpleDeliverer {
-	s := new(SimpleDeliverer)
-	s.ch = ch
-	return s
 }

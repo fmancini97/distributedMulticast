@@ -30,7 +30,7 @@ type senderMetadata struct {
 	conn    *grpc.ClientConn
 	client  e2egrpc.E2EClient
 	counter int
-	delay   int // Seconds
+	delay   int // Millisecond
 	rnd     *rand.Rand
 }
 

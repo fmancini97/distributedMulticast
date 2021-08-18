@@ -46,13 +46,16 @@ func (bm *bmulticast) SendToAll(message communication.Message) error {
 		}
 	}()
 
+	var err error
+	err = nil
+
 	for i := 0; i < len(bm.targets); i++ {
 		result := <-responseCh
 		if result.err != nil {
-			return errors.New(fmt.Sprintf("Address: %s - Error: %s", result.address, result.err.Error()))
+			err = errors.New(fmt.Sprintf("Address: %s - Error: %s", result.address, result.err.Error()))
 		}
 	}
-	return nil
+	return err
 }
 
 func (bm *bmulticast) Deliver(message communication.Message) error {
@@ -79,7 +82,7 @@ func (bm *bmulticast) getMTId() (string, error) {
 }
 
 func (bm *bmulticast) Init(mtId, clientId string, deliverer communication.Deliverer, targets []E2EMember) {
-	targets = append(targets, E2EMember{clientId, "localhost", localsender.New(bm)})
+	targets = append(targets, E2EMember{clientId, "localhost", localsender.New(bm, 2000)})
 	bm.targets = targets
 	bm.deliverer = deliverer
 	bm.mtId = mtId
