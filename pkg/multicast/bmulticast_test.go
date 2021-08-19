@@ -9,6 +9,7 @@ import (
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/internal/randstring"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/internal/simpledeliverer"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/communication"
+	"math/rand"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -191,7 +192,15 @@ func TestBmulticast_Deliver(t *testing.T) {
 	}
 }
 
-func TestBMulticast(t *testing.T) {
+func TestBMulticastSingle(t *testing.T) {
+	bMulticasting(t, true)
+}
+
+func TestBMulticastMultiple(t *testing.T) {
+	bMulticasting(t, false)
+}
+
+func bMulticasting(t *testing.T, singleSender bool) {
 	numMembers := 3
 	delay := 1000
 	messageToSent := 100
@@ -210,7 +219,10 @@ func TestBMulticast(t *testing.T) {
 	}
 
 	errCh := make(chan error)
-	for _, multicaster := range members {
+
+	senders := selectSender(singleSender, members)
+
+	for _, multicaster := range senders {
 		multicaster := multicaster
 
 		for i := 0; i < messageToSent; i++ {
@@ -224,7 +236,6 @@ func TestBMulticast(t *testing.T) {
 				}
 			}()
 		}
-
 	}
 
 	var wg sync.WaitGroup
@@ -233,7 +244,7 @@ func TestBMulticast(t *testing.T) {
 	for _, ch := range chDeliverers {
 		ch := ch
 		go func() {
-			for messages := make(map[uint64]bool); len(messages) < messageToSent*numMembers; {
+			for messages := make(map[uint64]bool); len(messages) < messageToSent*len(senders); {
 				select {
 				case message := <-ch:
 					messages[binary.LittleEndian.Uint64(message.Payload)] = true
@@ -259,6 +270,28 @@ func TestBMulticast(t *testing.T) {
 	case err := <-errCh:
 		t.Fatalf("Error while multicasting: %s", err)
 	}
+}
+
+func selectSender(singleSender bool, members map[string]*Container) map[string]*Container {
+	senders := make(map[string]*Container, 0)
+
+	if singleSender {
+		selected := rand.Intn(len(members))
+		index := 0
+		for key, member := range members {
+			if index == selected {
+				senders[key] = member
+				break
+			}
+			index++
+		}
+	} else {
+
+		for key, elem := range members {
+			senders[key] = elem
+		}
+	}
+	return senders
 }
 
 func initTestBMulticast(numMembers int, delay int) (map[string]*Container, map[string]chan communication.Message, error) {

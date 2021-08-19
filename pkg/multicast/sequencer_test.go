@@ -424,7 +424,15 @@ func TestSeqMulticastMaster_Deliver(t *testing.T) {
 
 }
 
-func TestSeqMulticast(t *testing.T) {
+func TestSeqMulticastSingle(t *testing.T) {
+	seqMulticaster(t, true)
+}
+
+func TestSeqMulticastMultiple(t *testing.T) {
+	seqMulticaster(t, false)
+}
+
+func seqMulticaster(t *testing.T, singleSender bool) {
 	numMembers := 3
 	delay := 1000
 	messageToSent := 100
@@ -434,7 +442,7 @@ func TestSeqMulticast(t *testing.T) {
 		t.Fatalf("Error while configuring pool: %s", err)
 	}
 
-	members, chDeliverers, err := initTestBMulticast(numMembers, delay)
+	bMulticasters, chDeliverers, err := initTestBMulticast(numMembers, delay)
 
 	if err != nil {
 		t.Fatalf("Error while initialializing BMultitcast: %s", err)
@@ -442,42 +450,46 @@ func TestSeqMulticast(t *testing.T) {
 
 	errCh := make(chan error)
 
-	masterId := rand.Intn(len(members))
+	masterId := rand.Intn(len(bMulticasters))
 
 	index := 0
 
 	counter := uint64(0)
 
-	for _, multicaster := range members {
-		var seqmulticaster Multicast
+	seqMulticasters := make(map[string]*Container)
+
+	for clientId, multicaster := range bMulticasters {
+		var seqmulticaster *Container
 
 		if masterId == index {
-			seqMaster := new(seqMulticastMaster)
-			err := seqMaster.Init(multicaster)
+
+			seqmulticaster, err = NewSeqMulticast(multicaster, true)
+
 			if err != nil {
 				t.Fatalf("Error while initializing sequencer master: %s", err)
 			}
 
-			seqmulticaster = seqMaster
 		} else {
-			seqWorker := new(seqMulticast)
-			err := seqWorker.Init(multicaster)
+			seqmulticaster, err = NewSeqMulticast(multicaster, false)
+
 			if err != nil {
 				t.Fatalf("Error while initializing sequencer worker: %s", err)
 			}
-
-			seqmulticaster = seqWorker
 		}
-
+		seqMulticasters[clientId] = seqmulticaster
 		index++
+	}
 
+	senders := selectSender(singleSender, seqMulticasters)
+
+	for _, sender := range senders {
+		sender := sender
 		for i := 0; i < messageToSent; i++ {
 			go func() {
 				b := make([]byte, 8)
-
 				seqNumber := atomic.AddUint64(&counter, 1)
 				binary.LittleEndian.PutUint64(b, seqNumber)
-				err := seqmulticaster.SendToAll(communication.NewMessage(b))
+				err := sender.SendToAll(communication.NewMessage(b))
 				if err != nil {
 					errCh <- err
 				}
@@ -497,7 +509,7 @@ func TestSeqMulticast(t *testing.T) {
 		go func() {
 			sequence := make([]uint64, 0)
 
-			for completed := make(map[uint64]bool); len(completed) < numMembers*messageToSent; {
+			for completed := make(map[uint64]bool); len(completed) < len(senders)*messageToSent; {
 				select {
 				case message := <-ch:
 
@@ -531,7 +543,7 @@ func TestSeqMulticast(t *testing.T) {
 		t.Fatalf("Error while multicasting: %s", err)
 	}
 
-	for i := 0; i < numMembers*messageToSent; i++ {
+	for i := 0; i < len(senders)*messageToSent; i++ {
 		var seq *uint64
 		seq = nil
 		for j := 0; j < numMembers; j++ {

@@ -48,23 +48,33 @@ func TestFifoMulticast_Init(t *testing.T) {
 		t.Fatalf("Error while initializing multicaster: %s", err)
 	}
 
+	err = checkFifoMulticast(fifom, mtId, clientId, smplDlv, members)
+
+	if err != nil {
+		t.Fatalf("Error while checking fifo multicaster: %s", err)
+	}
+}
+
+func checkFifoMulticast(fifom *fifoMulticast, mtId string, clientId string, smplDlv communication.Deliverer, members []string) error {
 	if mtId != fifom.mtId {
-		t.Fatalf("Multicast ID mismatch - Expected: %s, Actual: %s", mtId, fifom.mtId)
+		return errors.New(fmt.Sprintf("Multicast ID mismatch - Expected: %s, Actual: %s", mtId, fifom.mtId))
 	}
 
 	if clientId != fifom.clientId {
-		t.Fatalf("Client ID mismatch - Expected: %s, Actual: %s", clientId, fifom.clientId)
+		return errors.New(fmt.Sprintf("Client ID mismatch - Expected: %s, Actual: %s", clientId, fifom.clientId))
 	}
 
 	if smplDlv != fifom.deliverer {
-		t.Fatal("Deliverer mismatch")
+		return errors.New("deliverer mismatch")
 	}
 
 	for _, expectedMember := range members {
 		if _, ok := fifom.members[expectedMember]; !ok {
-			t.Fatalf("Missing member: %s", expectedMember)
+			return errors.New(fmt.Sprintf("Missing member: %s", expectedMember))
 		}
 	}
+
+	return nil
 }
 
 func TestFifoMulticast_SendToAll(t *testing.T) {
@@ -121,7 +131,17 @@ func TestFifoMulticast_SendToAll(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Error while checking message: %s", err)
 			}
+
 			messageCounter := binary.LittleEndian.Uint64(message.Payload)
+
+			counterString := message.Metadata[fmt.Sprintf("%s:counter", fifoHeader)]
+
+			headerCounter, _ := strconv.ParseUint(counterString, 10, 64)
+
+			if messageCounter != headerCounter {
+				t.Fatalf("Wrong order - Expected: %d, Actual: %d", messageCounter, headerCounter)
+			}
+
 			receivedMsgs[messageCounter] = true
 		case err := <-errCh:
 			t.Fatalf("Error while multicasting message: %s", err)
@@ -149,18 +169,9 @@ func checkFifoMessage(message communication.Message, expectedClientId string) er
 		return errors.New("missing counter")
 	}
 
-	headerCounter, err := strconv.ParseUint(counterString, 10, 64)
+	_, err := strconv.ParseUint(counterString, 10, 64)
 
-	if err != nil {
-		return err
-	}
-
-	messageCounter := binary.LittleEndian.Uint64(message.Payload)
-
-	if messageCounter != headerCounter {
-		return errors.New(fmt.Sprintf("Wrong order - Expected: %d, Actual: %d", messageCounter, headerCounter))
-	}
-	return nil
+	return err
 }
 
 func TestFifoMulticast_Deliver(t *testing.T) {
@@ -232,6 +243,14 @@ func TestFifoMulticast_Deliver(t *testing.T) {
 
 			actualCounter := binary.LittleEndian.Uint64(message.Payload)
 
+			counterString := message.Metadata[fmt.Sprintf("%s:counter", fifoHeader)]
+
+			headerCounter, _ := strconv.ParseUint(counterString, 10, 64)
+
+			if actualCounter != headerCounter {
+				t.Fatalf("Wrong order - Expected: %d, Actual: %d", actualCounter, headerCounter)
+			}
+
 			if expectedCounter != actualCounter {
 				t.Fatalf("Wrong message delivery - Expected: %d, Actual: %d", expectedCounter, actualCounter)
 			}
@@ -244,36 +263,55 @@ func TestFifoMulticast_Deliver(t *testing.T) {
 
 }
 
-func TestFifoMulticast(t *testing.T) {
+func TestFifoMulticastSingle(t *testing.T) {
+	fifomulticasting(t, true)
+}
+
+func TestFifoMulticastMultiple(t *testing.T) {
+	fifomulticasting(t, false)
+}
+
+func fifomulticasting(t *testing.T, singleSender bool) {
 	numMembers := 3
 	delay := 1000
-	messageToSent := 100
+	messageToSent := 10
 
 	err := ConfigPool(messageToSent)
 	if err != nil {
 		t.Fatalf("Error while configuring pool: %s", err)
 	}
 
-	members, chDeliverers, err := initTestBMulticast(numMembers, delay)
+	bMembers, chDeliverers, err := initTestBMulticast(numMembers, delay)
 
 	if err != nil {
 		t.Fatalf("Error while initialializing BMultitcast: %s", err)
 	}
 
 	errCh := make(chan error)
-	for _, multicaster := range members {
-		fifomulticaster := new(fifoMulticast)
-		err := fifomulticaster.Init(multicaster)
+
+	fifoMembers := make(map[string]*Container)
+
+	for key, multicaster := range bMembers {
+		fifomulticaster, err := NewFifoMulticast(multicaster)
+
 		if err != nil {
-			t.Fatalf("Error while initializing fifo multicast: %s", err)
+			t.Fatalf("Error while initializing fifo multicaster: %s", err)
 		}
 
+		fifoMembers[key] = fifomulticaster
+
+	}
+
+	senders := selectSender(singleSender, fifoMembers)
+
+	for _, sender := range senders {
+		sender := sender
 		for i := 0; i < messageToSent; i++ {
 			i := i
 			go func() {
 				b := make([]byte, 8)
 				binary.LittleEndian.PutUint64(b, uint64(i+1))
-				err := fifomulticaster.SendToAll(communication.NewMessage(b))
+				err := sender.SendToAll(communication.NewMessage(b))
 				if err != nil {
 					errCh <- err
 				}
@@ -288,7 +326,7 @@ func TestFifoMulticast(t *testing.T) {
 		ch := ch
 		go func() {
 			counters := make(map[string]uint64)
-			for _, member := range members {
+			for _, member := range senders {
 				clientId, err := member.getClientId()
 				if err != nil {
 					errCh <- err
@@ -298,7 +336,7 @@ func TestFifoMulticast(t *testing.T) {
 
 			}
 
-			for numMembersCompleted := 0; numMembersCompleted < numMembers; {
+			for numMembersCompleted := 0; numMembersCompleted < len(senders); {
 				select {
 				case message := <-ch:
 					clientId, ok := message.Metadata[fmt.Sprintf("%s:clientId", fifoHeader)]
