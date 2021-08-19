@@ -116,7 +116,7 @@ func TestFifoMulticast_SendToAll(t *testing.T) {
 		select {
 		case message := <-mtChan:
 
-			err := checkMessage(message, clientId)
+			err := checkFifoMessage(message, clientId)
 
 			if err != nil {
 				t.Fatalf("Error while checking message: %s", err)
@@ -132,7 +132,7 @@ func TestFifoMulticast_SendToAll(t *testing.T) {
 	}
 }
 
-func checkMessage(message communication.Message, expectedClientId string) error {
+func checkFifoMessage(message communication.Message, expectedClientId string) error {
 	actualClientId, ok := message.Metadata[fmt.Sprintf("%s:clientId", fifoHeader)]
 
 	if !ok {
@@ -225,7 +225,7 @@ func TestFifoMulticast_Deliver(t *testing.T) {
 
 		select {
 		case message := <-ch:
-			err := checkMessage(message, sourceClientId)
+			err := checkFifoMessage(message, sourceClientId)
 			if err != nil {
 				t.Fatalf("Error while checking message: %s", err)
 			}
@@ -235,6 +235,8 @@ func TestFifoMulticast_Deliver(t *testing.T) {
 			if expectedCounter != actualCounter {
 				t.Fatalf("Wrong message delivery - Expected: %d, Actual: %d", expectedCounter, actualCounter)
 			}
+		case err := <-errCh:
+			t.Fatalf("Error while delivering message: %s", err)
 		case <-time.After(time.Second * 60):
 			t.Fatalf("Missing message")
 		}
@@ -267,6 +269,7 @@ func TestFifoMulticast(t *testing.T) {
 		}
 
 		for i := 0; i < messageToSent; i++ {
+			i := i
 			go func() {
 				b := make([]byte, 8)
 				binary.LittleEndian.PutUint64(b, uint64(i+1))
