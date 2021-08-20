@@ -50,12 +50,13 @@ func (bm *bmulticast) SendToAll(message communication.Message) error {
 	var err error
 	err = nil
 
-	for i := 0; i < len(bm.members); {
+	for i := 0; i < len(bm.members); i++ {
 		result := <-responseCh
 		if result.err != nil {
 			err = errors.New(fmt.Sprintf("Address: %s - Error: %s", result.address, result.err.Error()))
 		}
 	}
+
 	return err
 }
 

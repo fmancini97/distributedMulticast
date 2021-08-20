@@ -24,6 +24,7 @@ func StdinSend(mtId string, multicaster multicast.Multicast, logger *log.Entry) 
 			if err != nil {
 				logger.WithField("error", err).Fatal("Failed to add deliverer")
 			}
+			logger.WithField("message", text).Info("Message sent")
 		}()
 	}
 }

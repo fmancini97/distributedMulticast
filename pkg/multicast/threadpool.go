@@ -4,7 +4,10 @@ import (
 	"container/list"
 	"errors"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/communication"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"sync"
+	"time"
 )
 
 type sendData struct {
@@ -82,9 +85,18 @@ func processMessages(quitCh chan bool, messageCh chan sendData) {
 	for {
 		select {
 		case data := <-messageCh:
+
 			err := data.tg.Sender.Send(data.streamId, data.message)
 
-			data.outputCh <- sendResult{address: data.tg.Address, err: err}
+			if status.Code(err) == codes.Unavailable {
+				go func() {
+					time.Sleep(time.Second * 5)
+					messageCh <- data
+				}()
+			} else {
+				data.outputCh <- sendResult{address: data.tg.Address, err: err}
+			}
+
 		case <-quitCh:
 			return
 		}

@@ -93,21 +93,24 @@ func TestBmulticast_SendToAll(t *testing.T) {
 
 	bm.Init(mtId, clientId, smplDlv, members)
 
+	errCh := make(chan error)
+
+	var wg sync.WaitGroup
+	wgChan := make(chan bool)
+	wg.Add(numMembers + 1)
+
 	go func() {
 		err := bm.SendToAll(communication.Message{
 			Metadata: make(map[string]string),
 			Payload:  []byte(messageString),
 		})
 		if err != nil {
-			t.Errorf("Error while sending messageString: %s", err)
+			errCh <- err
 			return
 		}
-	}()
+		wg.Done()
 
-	var wg sync.WaitGroup
-	wgChan := make(chan bool)
-	errCh := make(chan error)
-	wg.Add(numMembers)
+	}()
 
 	for _, ch := range outputCh {
 		go waitMessage(&wg, ch, messageString, errCh)
