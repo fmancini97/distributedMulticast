@@ -297,7 +297,7 @@ func (scm *scMulticast) decorate(deliverer communication.Deliverer) (communicati
 	return oldDeliverer, nil
 }
 
-func NewSCMulticast(container *Container) (*Container, error) {
+func DecorateSCMulticast(container *Container) (*Container, error) {
 	if container == nil || container.dlv == nil || container.mlt == nil {
 		return nil, errors.New("notInitialized")
 	}
@@ -313,4 +313,13 @@ func NewSCMulticast(container *Container) (*Container, error) {
 
 	return container, nil
 
+}
+
+func NewSCMulticast(mtId, clientId string, deliverer communication.Deliverer, targets []*E2EMember) (*Container, error) {
+	container, err := NewBMulticast(mtId, clientId, deliverer, targets)
+
+	if err != nil {
+		return nil, err
+	}
+	return DecorateSCMulticast(container)
 }

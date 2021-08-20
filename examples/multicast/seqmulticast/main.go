@@ -2,7 +2,7 @@ package main
 
 import (
 	log "github.com/sirupsen/logrus"
-	"gitlab.com/f_mancini/distribuitedOrderedMulticast/internal/chandeliverer"
+	deliverer2 "gitlab.com/f_mancini/distribuitedOrderedMulticast/internal/deliverer"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/internal/serverinitializer"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/internal/utils"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/communication"
@@ -30,7 +30,7 @@ func main() {
 	// Taking client port
 	programAddress := os.Args[1]
 
-	err := serverinitializer.InitializeServer(programAddress)
+	err := serverinitializer.InitializeServer(programAddress, e2e.Register)
 
 	if err != nil {
 		logger.WithField("error", err).Fatalf("Failed to initialize server")
@@ -49,7 +49,7 @@ func main() {
 
 	addresses := os.Args[4:]
 
-	connections, err := serverinitializer.InitializeConnections(addresses, 1000)
+	connections, err := e2e.InitializeConnections(addresses, 1000)
 
 	if err != nil {
 		logger.WithField("error", err).Fatalf("Failed to initialize connections")
@@ -57,7 +57,7 @@ func main() {
 
 	msgCh := make(chan communication.Message)
 
-	deliverer := chandeliverer.New(msgCh)
+	deliverer := deliverer2.NewChanDeliverer(msgCh)
 
 	multicaster, err := multicast.NewBMulticast(mtId, programAddress, deliverer, connections)
 
@@ -65,13 +65,13 @@ func main() {
 		logger.WithField("error", err).Fatalf("Error in creating multicaster")
 	}
 
-	multicaster, err = multicast.NewFifoMulticast(multicaster)
+	multicaster, err = multicast.DecorateFifoMulticast(multicaster)
 
 	if err != nil {
 		logger.WithField("error", err).Fatalf("Error in creating multicaster")
 	}
 
-	multicaster, err = multicast.NewSeqMulticast(multicaster, isMaster)
+	multicaster, err = multicast.DecorateSeqMulticast(multicaster, isMaster)
 
 	if err != nil {
 		logger.WithField("error", err).Fatalf("Error in creating multicaster")

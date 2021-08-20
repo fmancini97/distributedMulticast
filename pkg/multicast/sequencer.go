@@ -302,7 +302,7 @@ func (seq *seqMulticastMaster) Deliver(message communication.Message) error {
 	return seq.seqmt.Deliver(message)
 }
 
-func NewSeqMulticast(container *Container, isMaster bool) (*Container, error) {
+func DecorateSeqMulticast(container *Container, isMaster bool) (*Container, error) {
 	if container == nil || container.dlv == nil || container.mlt == nil {
 		return nil, errors.New("notInitialized")
 	}
@@ -328,4 +328,64 @@ func NewSeqMulticast(container *Container, isMaster bool) (*Container, error) {
 
 	return container, nil
 
+}
+
+func NewSeqWorker(mtId, clientId string, deliverer communication.Deliverer, targets []*E2EMember) (*Container, error) {
+	container, err := NewBMulticast(mtId, clientId, deliverer, targets)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return DecorateSeqMulticast(container, false)
+}
+
+func NewSeqMaster(mtId, clientId string, deliverer communication.Deliverer, targets []*E2EMember) (*Container, error) {
+	container, err := NewBMulticast(mtId, clientId, deliverer, targets)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return DecorateSeqMulticast(container, true)
+}
+
+func NewFifoSeqWorker(mtId, clientId string, deliverer communication.Deliverer, targets []*E2EMember) (*Container, error) {
+	container, err := NewFifoMulticast(mtId, clientId, deliverer, targets)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return DecorateSeqMulticast(container, false)
+}
+
+func NewFifoSeqMaster(mtId, clientId string, deliverer communication.Deliverer, targets []*E2EMember) (*Container, error) {
+	container, err := NewFifoMulticast(mtId, clientId, deliverer, targets)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return DecorateSeqMulticast(container, true)
+}
+
+func NewToCoWorker(mtId, clientId string, deliverer communication.Deliverer, targets []*E2EMember) (*Container, error) {
+	container, err := NewVCMulticast(mtId, clientId, deliverer, targets)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return DecorateSeqMulticast(container, false)
+}
+
+func NewToCoMaster(mtId, clientId string, deliverer communication.Deliverer, targets []*E2EMember) (*Container, error) {
+	container, err := NewVCMulticast(mtId, clientId, deliverer, targets)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return DecorateSeqMulticast(container, true)
 }

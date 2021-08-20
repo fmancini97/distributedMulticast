@@ -6,10 +6,11 @@ import (
 	log "github.com/sirupsen/logrus"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/internal/localsender"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/communication"
+	"math/rand"
 )
 
 type bmulticast struct {
-	targets   []E2EMember
+	members   []*E2EMember
 	deliverer communication.Deliverer
 	mtId      string
 	clientId  string
@@ -35,11 +36,11 @@ func (bm *bmulticast) SendToAll(message communication.Message) error {
 	defer close(responseCh)
 
 	go func() {
-		for _, t := range bm.targets {
+		for index := range rand.Perm(len(bm.members)) {
 			data := sendData{
 				message:  message,
 				streamId: bm.mtId,
-				tg:       t,
+				tg:       bm.members[index],
 				outputCh: responseCh,
 			}
 			pool.messageCh <- data
@@ -49,7 +50,7 @@ func (bm *bmulticast) SendToAll(message communication.Message) error {
 	var err error
 	err = nil
 
-	for i := 0; i < len(bm.targets); i++ {
+	for i := 0; i < len(bm.members); {
 		result := <-responseCh
 		if result.err != nil {
 			err = errors.New(fmt.Sprintf("Address: %s - Error: %s", result.address, result.err.Error()))
@@ -71,7 +72,7 @@ func (bm *bmulticast) decorate(deliverer communication.Deliverer) (communication
 
 func (bm *bmulticast) getGroup() ([]string, error) {
 	group := make([]string, 0)
-	for _, t := range bm.targets {
+	for _, t := range bm.members {
 		group = append(group, t.Id)
 	}
 	return group, nil
@@ -81,15 +82,15 @@ func (bm *bmulticast) getMTId() (string, error) {
 	return bm.mtId, nil
 }
 
-func (bm *bmulticast) Init(mtId, clientId string, deliverer communication.Deliverer, targets []E2EMember) {
-	targets = append(targets, E2EMember{clientId, "localhost", localsender.New(bm, 2000)})
-	bm.targets = targets
+func (bm *bmulticast) Init(mtId, clientId string, deliverer communication.Deliverer, targets []*E2EMember) {
+	targets = append(targets, &E2EMember{clientId, "localhost", localsender.New(bm, 0)})
+	bm.members = targets
 	bm.deliverer = deliverer
 	bm.mtId = mtId
 	bm.clientId = clientId
 }
 
-func NewBMulticast(mtId, clientId string, deliverer communication.Deliverer, targets []E2EMember) (*Container, error) {
+func NewBMulticast(mtId, clientId string, deliverer communication.Deliverer, targets []*E2EMember) (*Container, error) {
 	bm := new(bmulticast)
 	bm.Init(mtId, clientId, deliverer, targets)
 	container := new(Container)

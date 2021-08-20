@@ -265,7 +265,7 @@ func (vcm *vcMulticast) decorate(deliverer communication.Deliverer) (communicati
 	return oldDeliverer, nil
 }
 
-func NewVCMulticast(container *Container) (*Container, error) {
+func DecorateVCMulticast(container *Container) (*Container, error) {
 	if container == nil || container.dlv == nil || container.mlt == nil {
 		return nil, errors.New("notInitialized")
 	}
@@ -281,4 +281,13 @@ func NewVCMulticast(container *Container) (*Container, error) {
 
 	return container, nil
 
+}
+
+func NewVCMulticast(mtId, clientId string, deliverer communication.Deliverer, targets []*E2EMember) (*Container, error) {
+	container, err := NewBMulticast(mtId, clientId, deliverer, targets)
+
+	if err != nil {
+		return nil, err
+	}
+	return DecorateVCMulticast(container)
 }

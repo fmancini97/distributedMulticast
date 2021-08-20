@@ -5,6 +5,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/communication"
 	e2egrpc "gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/e2e/grpc"
+	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/multicast"
 	"google.golang.org/grpc"
 	"sync"
 )
@@ -41,4 +42,33 @@ func AddDeliverer(id string, deliverer communication.Deliverer) (err error) {
 func Register(s grpc.ServiceRegistrar) (err error) {
 	e2egrpc.RegisterE2EServer(s, &server{})
 	return
+}
+
+func InitializeConnection(id, address string, delay uint) (*multicast.E2EMember, error) {
+	grpcSender, err := ConnectWithDelay(address, delay)
+	if err != nil {
+		return nil, err
+	}
+
+	return &multicast.E2EMember{
+		Id:      id,
+		Address: address,
+		Sender:  grpcSender,
+	}, nil
+}
+
+func InitializeConnections(addresses []string, delay uint) ([]*multicast.E2EMember, error) {
+	// Taking other connections
+
+	e2eConnections := make([]*multicast.E2EMember, 0)
+
+	for _, address := range addresses {
+		e2eConnection, err := InitializeConnection(address, address, delay)
+		if err != nil {
+			return nil, err
+		}
+		e2eConnections = append(e2eConnections, e2eConnection)
+	}
+
+	return e2eConnections, nil
 }

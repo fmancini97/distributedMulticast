@@ -4,7 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"gitlab.com/f_mancini/distribuitedOrderedMulticast/internal/chandeliverer"
+	"gitlab.com/f_mancini/distribuitedOrderedMulticast/internal/deliverer"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/internal/randstring"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/communication"
 	"math/rand"
@@ -22,7 +22,7 @@ func TestFifoMulticast_Init(t *testing.T) {
 	numMembers := 3
 
 	ch := make(chan communication.Message)
-	smplDlv := chandeliverer.New(ch)
+	smplDlv := deliverer.NewChanDeliverer(ch)
 
 	mtChan := make(chan communication.Message)
 
@@ -85,7 +85,7 @@ func TestFifoMulticast_SendToAll(t *testing.T) {
 	numMembers := 3
 
 	ch := make(chan communication.Message)
-	smplDlv := chandeliverer.New(ch)
+	smplDlv := deliverer.NewChanDeliverer(ch)
 
 	mtChan := make(chan communication.Message)
 
@@ -182,7 +182,7 @@ func TestFifoMulticast_Deliver(t *testing.T) {
 	numMembers := 3
 
 	ch := make(chan communication.Message)
-	smplDlv := chandeliverer.New(ch)
+	smplDlv := deliverer.NewChanDeliverer(ch)
 
 	mtChan := make(chan communication.Message)
 
@@ -292,7 +292,7 @@ func fifomulticasting(t *testing.T, singleSender bool) {
 	fifoMembers := make(map[string]*Container)
 
 	for key, multicaster := range bMembers {
-		fifomulticaster, err := NewFifoMulticast(multicaster)
+		fifomulticaster, err := DecorateFifoMulticast(multicaster)
 
 		if err != nil {
 			t.Fatalf("Error while initializing fifo multicaster: %s", err)

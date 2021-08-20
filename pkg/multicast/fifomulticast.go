@@ -178,7 +178,7 @@ func (fifom *fifoMulticast) decorate(deliverer communication.Deliverer) (communi
 	return oldDeliverer, nil
 }
 
-func NewFifoMulticast(container *Container) (*Container, error) {
+func DecorateFifoMulticast(container *Container) (*Container, error) {
 	if container == nil || container.dlv == nil || container.mlt == nil {
 		return nil, errors.New("notInitialized")
 	}
@@ -193,5 +193,13 @@ func NewFifoMulticast(container *Container) (*Container, error) {
 	container.mlt = fifoMulticaster
 
 	return container, nil
+}
 
+func NewFifoMulticast(mtId, clientId string, deliverer communication.Deliverer, targets []*E2EMember) (*Container, error) {
+	container, err := NewBMulticast(mtId, clientId, deliverer, targets)
+
+	if err != nil {
+		return nil, err
+	}
+	return DecorateFifoMulticast(container)
 }

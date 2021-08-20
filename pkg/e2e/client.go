@@ -30,7 +30,7 @@ type senderMetadata struct {
 	conn    *grpc.ClientConn
 	client  e2egrpc.E2EClient
 	counter int
-	delay   int // Millisecond
+	delay   uint // Millisecond
 	rnd     *rand.Rand
 }
 
@@ -42,7 +42,7 @@ func Connect(address string) (*GrpcSender, error) {
 	return ConnectWithDelay(address, 0)
 }
 
-func ConnectWithDelay(address string, delay int) (*GrpcSender, error) {
+func ConnectWithDelay(address string, delay uint) (*GrpcSender, error) {
 	logger := e2eLog.WithField("address", address)
 
 	logger.Debug("Connecting")
@@ -84,10 +84,10 @@ func (gs *GrpcSender) Send(streamId string, message communication.Message) error
 	}
 
 	if gs.meta.delay > 0 {
-		time.Sleep(time.Duration(gs.meta.rnd.Intn(gs.meta.delay)) * time.Millisecond)
+		time.Sleep(time.Duration(gs.meta.rnd.Intn(int(gs.meta.delay))) * time.Millisecond)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10000)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*60)
 	defer cancel()
 
 	_, err := gs.meta.client.Send(ctx, &e2egrpc.Message{Id: streamId, Metadata: message.Metadata, Payload: message.Payload})

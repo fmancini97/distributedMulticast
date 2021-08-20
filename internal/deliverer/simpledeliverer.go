@@ -1,4 +1,4 @@
-package simpledeliverer
+package deliverer
 
 import (
 	"errors"

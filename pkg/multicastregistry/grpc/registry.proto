@@ -1,0 +1,69 @@
+syntax = "proto3";
+
+package grpc;
+option go_package = "gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/registry/grpc";
+
+service Registry {
+  rpc register (RegistrationInfo) returns (RegistrationAnswer) {}
+  rpc getStatus (GroupId) returns (GroupInfo) {}
+  rpc startGroup (RequestData) returns (GroupInfo) {}
+  rpc ready (RequestData) returns (GroupInfo) {}
+}
+
+enum Status {
+  OPENING = 0;
+  STARTING = 1;
+  ACTIVE = 2;
+  CLOSED = 3;
+}
+
+enum MulticastType {
+  BMULTICAST = 0;
+  FIFOMULTICAST = 1;
+  TOMULTICASTSEQ = 2;
+  TOFIFOMULTICASTSEQ = 3;
+  TOMULTICASTSC = 4;
+  COMULTICAST = 5;
+  TOCOMULTICAST = 6;
+}
+
+message RegistrationInfo {
+  string groupId = 1;
+  MulticastType multicastType = 2;
+  uint64 clientPort = 3;
+
+}
+
+message RegistrationAnswer {
+  string clientId = 1;
+  GroupInfo groupInfo = 2;
+}
+
+message GroupInfo {
+  string groupId = 1;
+  MulticastType multicastType = 2;
+  Status status = 3;
+  uint64 readyMembers = 4;
+  map<string, MemberInfo>  members = 5;
+}
+
+message GroupId {
+  string groupId = 1;
+}
+
+message RequestData {
+  string groupId = 1;
+  string clientId = 2;
+}
+
+message MemberInfo {
+  string id = 1;
+  string address = 2;
+  bool ready = 3;
+}
+
+
+
+
+
+

@@ -4,10 +4,9 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"gitlab.com/f_mancini/distribuitedOrderedMulticast/internal/chandeliverer"
+	"gitlab.com/f_mancini/distribuitedOrderedMulticast/internal/deliverer"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/internal/localsender"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/internal/randstring"
-	"gitlab.com/f_mancini/distribuitedOrderedMulticast/internal/simpledeliverer"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/communication"
 	"math/rand"
 	"sync"
@@ -23,16 +22,16 @@ func TestBmulticast_Init(t *testing.T) {
 	numTargets := 2
 
 	ch := make(chan communication.Message)
-	smplDlv := chandeliverer.New(ch)
+	smplDlv := deliverer.NewChanDeliverer(ch)
 
-	members := make([]E2EMember, 0)
+	members := make([]*E2EMember, 0)
 
 	for i := 0; i < numTargets; i++ {
 
-		target := E2EMember{
+		target := &E2EMember{
 			Id:      fmt.Sprintf("qwerty-%d", i),
 			Address: "127.0.0.1",
-			Sender:  localsender.New(chandeliverer.New(make(chan communication.Message)), 2000),
+			Sender:  localsender.New(deliverer.NewChanDeliverer(make(chan communication.Message)), 2000),
 		}
 
 		members = append(members, target)
@@ -54,7 +53,7 @@ func TestBmulticast_Init(t *testing.T) {
 	}
 
 	for index, expectedMember := range members {
-		actualMember := bm.targets[index]
+		actualMember := bm.members[index]
 		if expectedMember.Id != actualMember.Id || expectedMember.Address != actualMember.Address || expectedMember.Sender != actualMember.Sender {
 			t.Fatalf("E2EMember mismatch - Expected: {Id: %s, Address: %s}, Actual: {Id: %s, Address: %s}",
 				expectedMember.Id, expectedMember.Address, actualMember.Id, actualMember.Address)
@@ -71,18 +70,18 @@ func TestBmulticast_SendToAll(t *testing.T) {
 	numMembers := 3
 
 	appCh := make(chan communication.Message)
-	smplDlv := chandeliverer.New(appCh)
+	smplDlv := deliverer.NewChanDeliverer(appCh)
 
-	members := make([]E2EMember, 0)
+	members := make([]*E2EMember, 0)
 
 	outputCh := make([]chan communication.Message, 0)
 
 	for i := 0; i < numMembers-1; i++ {
 		ch := make(chan communication.Message)
-		target := E2EMember{
+		target := &E2EMember{
 			Id:      fmt.Sprintf("qwerty%d", i),
 			Address: "127.0.0.1",
-			Sender:  localsender.New(chandeliverer.New(ch), 2000),
+			Sender:  localsender.New(deliverer.NewChanDeliverer(ch), 2000),
 		}
 
 		outputCh = append(outputCh, ch)
@@ -148,17 +147,17 @@ func TestBmulticast_Deliver(t *testing.T) {
 	numMembers := 3
 
 	ch := make(chan communication.Message)
-	smplDlv := chandeliverer.New(ch)
+	smplDlv := deliverer.NewChanDeliverer(ch)
 
-	members := make([]E2EMember, 0)
+	members := make([]*E2EMember, 0)
 
 	outputCh := make(chan communication.Message)
 
 	for i := 0; i < numMembers-1; i++ {
-		target := E2EMember{
+		target := &E2EMember{
 			Id:      fmt.Sprintf("qwerty%d", i),
 			Address: "127.0.0.1",
-			Sender:  localsender.New(chandeliverer.New(outputCh), 2000),
+			Sender:  localsender.New(deliverer.NewChanDeliverer(outputCh), 2000),
 		}
 
 		members = append(members, target)
@@ -297,8 +296,8 @@ func selectSender(singleSender bool, members map[string]*Container) map[string]*
 func initTestBMulticast(numMembers int, delay int) (map[string]*Container, map[string]chan communication.Message, error) {
 	members := make(map[string]*Container, numMembers)
 	chDeliverers := make(map[string]chan communication.Message, numMembers)
-	appDeliverers := make(map[string]*chandeliverer.ChanDeliverer, numMembers)
-	e2eDelivereres := make(map[string]*simpledeliverer.SimpleDeliverer, numMembers)
+	appDeliverers := make(map[string]*deliverer.ChanDeliverer, numMembers)
+	e2eDelivereres := make(map[string]*deliverer.SimpleDeliverer, numMembers)
 
 	multicastId := randstring.RandSeq(20)
 
@@ -308,23 +307,23 @@ func initTestBMulticast(numMembers int, delay int) (map[string]*Container, map[s
 			clientId = randstring.RandSeq(10)
 		}
 
-		lD := new(simpledeliverer.SimpleDeliverer)
+		lD := new(deliverer.SimpleDeliverer)
 
 		e2eDelivereres[clientId] = lD
 
 		outputCh := make(chan communication.Message, 50)
 
-		smplDlv := chandeliverer.New(outputCh)
+		smplDlv := deliverer.NewChanDeliverer(outputCh)
 
 		chDeliverers[clientId] = outputCh
 		appDeliverers[clientId] = smplDlv
 	}
 
 	for clientId, lclDlv := range e2eDelivereres {
-		group := make([]E2EMember, 0)
+		group := make([]*E2EMember, 0)
 		for cltId, lD := range e2eDelivereres {
 			if clientId != cltId {
-				member := E2EMember{
+				member := &E2EMember{
 					Id:      cltId,
 					Address: cltId,
 					Sender:  localsender.New(lD, delay),

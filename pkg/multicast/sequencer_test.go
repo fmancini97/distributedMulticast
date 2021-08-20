@@ -4,7 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"gitlab.com/f_mancini/distribuitedOrderedMulticast/internal/chandeliverer"
+	"gitlab.com/f_mancini/distribuitedOrderedMulticast/internal/deliverer"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/internal/randstring"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/communication"
 	"math/rand"
@@ -23,7 +23,7 @@ func TestSeqMulticast_Init(t *testing.T) {
 	numMembers := 3
 
 	ch := make(chan communication.Message)
-	smplDlv := chandeliverer.New(ch)
+	smplDlv := deliverer.NewChanDeliverer(ch)
 
 	mtChan := make(chan communication.Message)
 
@@ -55,7 +55,7 @@ func TestSeqMulticast_Init(t *testing.T) {
 	}
 }
 
-func checkSequencer(seqm *seqMulticast, mtId string, clientId string, smplDlv *chandeliverer.ChanDeliverer, members []string) error {
+func checkSequencer(seqm *seqMulticast, mtId string, clientId string, smplDlv *deliverer.ChanDeliverer, members []string) error {
 	if mtId != seqm.mtId {
 		return errors.New(fmt.Sprintf("Multicast ID mismatch - Expected: %s, Actual: %s", mtId, seqm.mtId))
 	}
@@ -84,7 +84,7 @@ func TestSeqMulticastMaster_Init(t *testing.T) {
 	numMembers := 3
 
 	ch := make(chan communication.Message)
-	smplDlv := chandeliverer.New(ch)
+	smplDlv := deliverer.NewChanDeliverer(ch)
 
 	mtChan := make(chan communication.Message)
 
@@ -124,7 +124,7 @@ func TestSeqMulticast_SendToAll(t *testing.T) {
 	numMembers := 3
 
 	ch := make(chan communication.Message)
-	smplDlv := chandeliverer.New(ch)
+	smplDlv := deliverer.NewChanDeliverer(ch)
 
 	mtChan := make(chan communication.Message)
 
@@ -159,7 +159,7 @@ func TestSeqMulticastMaster_SendToAll(t *testing.T) {
 	numMembers := 3
 
 	ch := make(chan communication.Message)
-	smplDlv := chandeliverer.New(ch)
+	smplDlv := deliverer.NewChanDeliverer(ch)
 
 	mtChan := make(chan communication.Message)
 
@@ -246,7 +246,7 @@ func TestSeqMulticast_Deliver(t *testing.T) {
 	numMembers := 3
 
 	ch := make(chan communication.Message)
-	smplDlv := chandeliverer.New(ch)
+	smplDlv := deliverer.NewChanDeliverer(ch)
 
 	mtChan := make(chan communication.Message)
 
@@ -343,7 +343,7 @@ func TestSeqMulticastMaster_Deliver(t *testing.T) {
 	numMembers := 3
 
 	ch := make(chan communication.Message)
-	smplDlv := chandeliverer.New(ch)
+	smplDlv := deliverer.NewChanDeliverer(ch)
 
 	mtChan := make(chan communication.Message)
 
@@ -463,14 +463,14 @@ func seqMulticaster(t *testing.T, singleSender bool) {
 
 		if masterId == index {
 
-			seqmulticaster, err = NewSeqMulticast(multicaster, true)
+			seqmulticaster, err = DecorateSeqMulticast(multicaster, true)
 
 			if err != nil {
 				t.Fatalf("Error while initializing sequencer master: %s", err)
 			}
 
 		} else {
-			seqmulticaster, err = NewSeqMulticast(multicaster, false)
+			seqmulticaster, err = DecorateSeqMulticast(multicaster, false)
 
 			if err != nil {
 				t.Fatalf("Error while initializing sequencer worker: %s", err)

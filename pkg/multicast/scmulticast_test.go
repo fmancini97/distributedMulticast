@@ -4,7 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"gitlab.com/f_mancini/distribuitedOrderedMulticast/internal/chandeliverer"
+	"gitlab.com/f_mancini/distribuitedOrderedMulticast/internal/deliverer"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/internal/randstring"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/communication"
 	"math/rand"
@@ -23,7 +23,7 @@ func TestSCMulticast_Init(t *testing.T) {
 	numMembers := 3
 
 	ch := make(chan communication.Message)
-	smplDlv := chandeliverer.New(ch)
+	smplDlv := deliverer.NewChanDeliverer(ch)
 
 	mtChan := make(chan communication.Message)
 
@@ -83,7 +83,7 @@ func TestScMulticast_SendToAll(t *testing.T) {
 	numMembers := 3
 
 	ch := make(chan communication.Message)
-	smplDlv := chandeliverer.New(ch)
+	smplDlv := deliverer.NewChanDeliverer(ch)
 
 	mtChan := make(chan communication.Message)
 
@@ -189,7 +189,7 @@ func TestScMulticast_Deliver(t *testing.T) {
 	numMembers := 3
 
 	ch := make(chan communication.Message)
-	smplDlv := chandeliverer.New(ch)
+	smplDlv := deliverer.NewChanDeliverer(ch)
 
 	mtChan := make(chan communication.Message)
 
@@ -396,7 +396,7 @@ func scMulticaster(t *testing.T, singleSender bool) {
 	scMulticasters := make(map[string]*Container)
 
 	for clientId, multicaster := range bMulticasters {
-		scMulticaster, err := NewSCMulticast(multicaster)
+		scMulticaster, err := DecorateSCMulticast(multicaster)
 
 		if err != nil {
 			t.Fatalf("Error while initializing multicaster: %s", err)

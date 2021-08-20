@@ -18,9 +18,10 @@ const _ = grpc.SupportPackageIsVersion7
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type RegistryClient interface {
-	Register(ctx context.Context, in *RegistrationInfo, opts ...grpc.CallOption) (*GroupInfo, error)
-	GetStatus(ctx context.Context, in *Group, opts ...grpc.CallOption) (*GroupInfo, error)
-	StartGroup(ctx context.Context, in *Group, opts ...grpc.CallOption) (*GroupInfo, error)
+	Register(ctx context.Context, in *RegistrationInfo, opts ...grpc.CallOption) (*RegistrationAnswer, error)
+	GetStatus(ctx context.Context, in *GroupId, opts ...grpc.CallOption) (*GroupInfo, error)
+	StartGroup(ctx context.Context, in *RequestData, opts ...grpc.CallOption) (*GroupInfo, error)
+	Ready(ctx context.Context, in *RequestData, opts ...grpc.CallOption) (*GroupInfo, error)
 }
 
 type registryClient struct {
@@ -31,8 +32,8 @@ func NewRegistryClient(cc grpc.ClientConnInterface) RegistryClient {
 	return &registryClient{cc}
 }
 
-func (c *registryClient) Register(ctx context.Context, in *RegistrationInfo, opts ...grpc.CallOption) (*GroupInfo, error) {
-	out := new(GroupInfo)
+func (c *registryClient) Register(ctx context.Context, in *RegistrationInfo, opts ...grpc.CallOption) (*RegistrationAnswer, error) {
+	out := new(RegistrationAnswer)
 	err := c.cc.Invoke(ctx, "/grpc.Registry/register", in, out, opts...)
 	if err != nil {
 		return nil, err
@@ -40,7 +41,7 @@ func (c *registryClient) Register(ctx context.Context, in *RegistrationInfo, opt
 	return out, nil
 }
 
-func (c *registryClient) GetStatus(ctx context.Context, in *Group, opts ...grpc.CallOption) (*GroupInfo, error) {
+func (c *registryClient) GetStatus(ctx context.Context, in *GroupId, opts ...grpc.CallOption) (*GroupInfo, error) {
 	out := new(GroupInfo)
 	err := c.cc.Invoke(ctx, "/grpc.Registry/getStatus", in, out, opts...)
 	if err != nil {
@@ -49,9 +50,18 @@ func (c *registryClient) GetStatus(ctx context.Context, in *Group, opts ...grpc.
 	return out, nil
 }
 
-func (c *registryClient) StartGroup(ctx context.Context, in *Group, opts ...grpc.CallOption) (*GroupInfo, error) {
+func (c *registryClient) StartGroup(ctx context.Context, in *RequestData, opts ...grpc.CallOption) (*GroupInfo, error) {
 	out := new(GroupInfo)
 	err := c.cc.Invoke(ctx, "/grpc.Registry/startGroup", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *registryClient) Ready(ctx context.Context, in *RequestData, opts ...grpc.CallOption) (*GroupInfo, error) {
+	out := new(GroupInfo)
+	err := c.cc.Invoke(ctx, "/grpc.Registry/ready", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -62,9 +72,10 @@ func (c *registryClient) StartGroup(ctx context.Context, in *Group, opts ...grpc
 // All implementations must embed UnimplementedRegistryServer
 // for forward compatibility
 type RegistryServer interface {
-	Register(context.Context, *RegistrationInfo) (*GroupInfo, error)
-	GetStatus(context.Context, *Group) (*GroupInfo, error)
-	StartGroup(context.Context, *Group) (*GroupInfo, error)
+	Register(context.Context, *RegistrationInfo) (*RegistrationAnswer, error)
+	GetStatus(context.Context, *GroupId) (*GroupInfo, error)
+	StartGroup(context.Context, *RequestData) (*GroupInfo, error)
+	Ready(context.Context, *RequestData) (*GroupInfo, error)
 	mustEmbedUnimplementedRegistryServer()
 }
 
@@ -72,14 +83,17 @@ type RegistryServer interface {
 type UnimplementedRegistryServer struct {
 }
 
-func (UnimplementedRegistryServer) Register(context.Context, *RegistrationInfo) (*GroupInfo, error) {
+func (UnimplementedRegistryServer) Register(context.Context, *RegistrationInfo) (*RegistrationAnswer, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Register not implemented")
 }
-func (UnimplementedRegistryServer) GetStatus(context.Context, *Group) (*GroupInfo, error) {
+func (UnimplementedRegistryServer) GetStatus(context.Context, *GroupId) (*GroupInfo, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetStatus not implemented")
 }
-func (UnimplementedRegistryServer) StartGroup(context.Context, *Group) (*GroupInfo, error) {
+func (UnimplementedRegistryServer) StartGroup(context.Context, *RequestData) (*GroupInfo, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method StartGroup not implemented")
+}
+func (UnimplementedRegistryServer) Ready(context.Context, *RequestData) (*GroupInfo, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Ready not implemented")
 }
 func (UnimplementedRegistryServer) mustEmbedUnimplementedRegistryServer() {}
 
@@ -113,7 +127,7 @@ func _Registry_Register_Handler(srv interface{}, ctx context.Context, dec func(i
 }
 
 func _Registry_GetStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(Group)
+	in := new(GroupId)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -125,13 +139,13 @@ func _Registry_GetStatus_Handler(srv interface{}, ctx context.Context, dec func(
 		FullMethod: "/grpc.Registry/getStatus",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(RegistryServer).GetStatus(ctx, req.(*Group))
+		return srv.(RegistryServer).GetStatus(ctx, req.(*GroupId))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
 func _Registry_StartGroup_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(Group)
+	in := new(RequestData)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -143,7 +157,25 @@ func _Registry_StartGroup_Handler(srv interface{}, ctx context.Context, dec func
 		FullMethod: "/grpc.Registry/startGroup",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(RegistryServer).StartGroup(ctx, req.(*Group))
+		return srv.(RegistryServer).StartGroup(ctx, req.(*RequestData))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Registry_Ready_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RequestData)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RegistryServer).Ready(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/grpc.Registry/ready",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RegistryServer).Ready(ctx, req.(*RequestData))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -166,6 +198,10 @@ var Registry_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "startGroup",
 			Handler:    _Registry_StartGroup_Handler,
+		},
+		{
+			MethodName: "ready",
+			Handler:    _Registry_Ready_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

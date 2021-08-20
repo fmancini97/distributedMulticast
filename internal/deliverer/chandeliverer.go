@@ -1,4 +1,4 @@
-package chandeliverer
+package deliverer
 
 import "gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/communication"
 
@@ -11,7 +11,7 @@ func (s *ChanDeliverer) Deliver(message communication.Message) error {
 	return nil
 }
 
-func New(ch chan communication.Message) *ChanDeliverer {
+func NewChanDeliverer(ch chan communication.Message) *ChanDeliverer {
 	s := new(ChanDeliverer)
 	s.ch = ch
 	return s

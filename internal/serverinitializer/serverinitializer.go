@@ -2,13 +2,11 @@ package serverinitializer
 
 import (
 	log "github.com/sirupsen/logrus"
-	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/e2e"
-	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/multicast"
 	"google.golang.org/grpc"
 	"net"
 )
 
-func InitializeServer(programAddress string) error {
+func InitializeServer(programAddress string, grpcServices ...func(grpc.ServiceRegistrar) error) error {
 	logger := log.WithField("address", programAddress)
 	logger.Debug("Initializing server")
 
@@ -18,9 +16,12 @@ func InitializeServer(programAddress string) error {
 	}
 
 	s := grpc.NewServer()
-	err = e2e.Register(s)
-	if err != nil {
-		return err
+	for _, grpcService := range grpcServices {
+		err = grpcService(s)
+		if err != nil {
+			return err
+		}
+
 	}
 
 	go func() {
@@ -31,21 +32,4 @@ func InitializeServer(programAddress string) error {
 
 	return nil
 
-}
-
-func InitializeConnections(addresses []string, delay int) ([]multicast.E2EMember, error) {
-	// Taking other connections
-
-	connections := make([]multicast.E2EMember, 0)
-
-	for _, address := range addresses {
-		grpcSender, err := e2e.ConnectWithDelay(address, delay)
-		if err != nil {
-			return nil, err
-		}
-
-		connections = append(connections, multicast.E2EMember{Address: address, Sender: grpcSender, Id: address})
-	}
-
-	return connections, nil
 }
