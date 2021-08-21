@@ -85,61 +85,61 @@ func (cnt *Container) Deliver(message communication.Message) error {
 type Type int
 
 const (
-	Type_BMULTICAST Type = iota
-	Type_FIFOMULTICAST
-	Type_TOMULTICASTSEQMASTER
-	Type_TOMULTICASTSEQWORKER
-	Type_TOFIFOMULTICASTSEQMASTER
-	Type_TOFIFOMULTICASTSEQWORKER
-	Type_TOMULTICASTSC
-	Type_COMULTICAST
-	Type_TOCOMULTICASTMASTER
-	Type_TOCOMULTICASTWORKER
+	TypeBMULTICAST Type = iota
+	TypeFIFOMULTICAST
+	TypeTOMULTICASTSEQMASTER
+	TypeTOMULTICASTSEQWORKER
+	TypeTOFIFOMULTICASTSEQMASTER
+	TypeTOFIFOMULTICASTSEQWORKER
+	TypeTOMULTICASTSC
+	TypeCOMULTICAST
+	TypeTOCOMULTICASTMASTER
+	TypeTOCOMULTICASTWORKER
 )
 
 var (
-	MulticastType_value = map[string]Type{
-		"BMULTICAST":               Type_BMULTICAST,
-		"FIFOMULTICAST":            Type_FIFOMULTICAST,
-		"TOMULTICASTSEQMASTER":     Type_TOMULTICASTSEQMASTER,
-		"TOMULTICASTSEQWORKER":     Type_TOMULTICASTSEQWORKER,
-		"TOFIFOMULTICASTSEQMASTER": Type_TOFIFOMULTICASTSEQMASTER,
-		"TOFIFOMULTICASTSEQWORKER": Type_TOFIFOMULTICASTSEQWORKER,
-		"TOMULTICASTSC":            Type_TOMULTICASTSC,
-		"COMULTICAST":              Type_COMULTICAST,
-		"TOCOMULTICASTMASTER":      Type_TOCOMULTICASTMASTER,
-		"TOCOMULTICASTWORKER":      Type_TOCOMULTICASTWORKER,
+	TypeValue = map[string]Type{
+		"BMULTICAST":               TypeBMULTICAST,
+		"FIFOMULTICAST":            TypeFIFOMULTICAST,
+		"TOMULTICASTSEQMASTER":     TypeTOMULTICASTSEQMASTER,
+		"TOMULTICASTSEQWORKER":     TypeTOMULTICASTSEQWORKER,
+		"TOFIFOMULTICASTSEQMASTER": TypeTOFIFOMULTICASTSEQMASTER,
+		"TOFIFOMULTICASTSEQWORKER": TypeTOFIFOMULTICASTSEQWORKER,
+		"TOMULTICASTSC":            TypeTOMULTICASTSC,
+		"COMULTICAST":              TypeCOMULTICAST,
+		"TOCOMULTICASTMASTER":      TypeTOCOMULTICASTMASTER,
+		"TOCOMULTICASTWORKER":      TypeTOCOMULTICASTWORKER,
 	}
 
-	MulticastType_name = map[Type]string{
-		Type_BMULTICAST:               "BMULTICAST",
-		Type_FIFOMULTICAST:            "FIFOMULTICAST",
-		Type_TOMULTICASTSEQMASTER:     "TOMULTICASTSEQMASTER",
-		Type_TOMULTICASTSEQWORKER:     "TOMULTICASTSEQWORKER",
-		Type_TOFIFOMULTICASTSEQMASTER: "TOMULTICASTSC",
-		Type_TOFIFOMULTICASTSEQWORKER: "COMULTICAST",
-		Type_TOMULTICASTSC:            "TOMULTICASTSC",
-		Type_COMULTICAST:              "COMULTICAST",
-		Type_TOCOMULTICASTMASTER:      "TOCOMULTICASTMASTER",
-		Type_TOCOMULTICASTWORKER:      "TOCOMULTICASTWORKER",
+	TypeName = map[Type]string{
+		TypeBMULTICAST:               "BMULTICAST",
+		TypeFIFOMULTICAST:            "FIFOMULTICAST",
+		TypeTOMULTICASTSEQMASTER:     "TOMULTICASTSEQMASTER",
+		TypeTOMULTICASTSEQWORKER:     "TOMULTICASTSEQWORKER",
+		TypeTOFIFOMULTICASTSEQMASTER: "TOMULTICASTSC",
+		TypeTOFIFOMULTICASTSEQWORKER: "COMULTICAST",
+		TypeTOMULTICASTSC:            "TOMULTICASTSC",
+		TypeCOMULTICAST:              "COMULTICAST",
+		TypeTOCOMULTICASTMASTER:      "TOCOMULTICASTMASTER",
+		TypeTOCOMULTICASTWORKER:      "TOCOMULTICASTWORKER",
 	}
 )
 
-var MulticastInitializers = map[Type]func(mtId, clientId string, deliverer communication.Deliverer, targets []*E2EMember) (*Container, error){
-	Type_BMULTICAST:               NewBMulticast,
-	Type_FIFOMULTICAST:            NewFifoMulticast,
-	Type_TOMULTICASTSEQMASTER:     NewSeqMaster,
-	Type_TOMULTICASTSEQWORKER:     NewSeqWorker,
-	Type_TOFIFOMULTICASTSEQMASTER: NewFifoSeqMaster,
-	Type_TOFIFOMULTICASTSEQWORKER: NewSeqWorker,
-	Type_TOMULTICASTSC:            NewSCMulticast,
-	Type_COMULTICAST:              NewVCMulticast,
-	Type_TOCOMULTICASTMASTER:      NewToCoMaster,
-	Type_TOCOMULTICASTWORKER:      NewToCoWorker,
+var Initializers = map[Type]func(mtId, clientId string, deliverer communication.Deliverer, targets []*E2EMember) (*Container, error){
+	TypeBMULTICAST:               NewBMulticast,
+	TypeFIFOMULTICAST:            NewFifoMulticast,
+	TypeTOMULTICASTSEQMASTER:     NewSeqMaster,
+	TypeTOMULTICASTSEQWORKER:     NewSeqWorker,
+	TypeTOFIFOMULTICASTSEQMASTER: NewFifoSeqMaster,
+	TypeTOFIFOMULTICASTSEQWORKER: NewFifoSeqWorker,
+	TypeTOMULTICASTSC:            NewSCMulticast,
+	TypeCOMULTICAST:              NewVCMulticast,
+	TypeTOCOMULTICASTMASTER:      NewToCoMaster,
+	TypeTOCOMULTICASTWORKER:      NewToCoWorker,
 }
 
 func New(multicastType Type, mtId, clientId string, deliverer communication.Deliverer, targets []*E2EMember) (*Container, error) {
-	initializer, ok := MulticastInitializers[multicastType]
+	initializer, ok := Initializers[multicastType]
 
 	if !ok {
 		return nil, errors.New("notImplemented")

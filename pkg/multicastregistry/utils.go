@@ -19,7 +19,7 @@ var MulticastTypes []string
 func init() {
 	MulticastTypes = make([]string, 0)
 
-	for multicastType, _ := range MulticastType {
+	for multicastType := range MulticastType {
 		MulticastTypes = append(MulticastTypes, multicastType)
 	}
 }

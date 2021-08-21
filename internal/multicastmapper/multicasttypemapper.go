@@ -7,31 +7,31 @@ import (
 
 var Type = map[registrygrpc.MulticastType]map[bool]multicast.Type{
 	registrygrpc.MulticastType_BMULTICAST: {
-		true:  multicast.Type_BMULTICAST,
-		false: multicast.Type_BMULTICAST,
+		true:  multicast.TypeBMULTICAST,
+		false: multicast.TypeBMULTICAST,
 	},
 	registrygrpc.MulticastType_FIFOMULTICAST: {
-		true:  multicast.Type_FIFOMULTICAST,
-		false: multicast.Type_FIFOMULTICAST,
+		true:  multicast.TypeFIFOMULTICAST,
+		false: multicast.TypeFIFOMULTICAST,
 	},
 	registrygrpc.MulticastType_TOMULTICASTSEQ: {
-		true:  multicast.Type_TOMULTICASTSEQMASTER,
-		false: multicast.Type_TOMULTICASTSEQWORKER,
+		true:  multicast.TypeTOMULTICASTSEQMASTER,
+		false: multicast.TypeTOMULTICASTSEQWORKER,
 	},
 	registrygrpc.MulticastType_TOFIFOMULTICASTSEQ: {
-		true:  multicast.Type_TOFIFOMULTICASTSEQMASTER,
-		false: multicast.Type_TOFIFOMULTICASTSEQWORKER,
+		true:  multicast.TypeTOFIFOMULTICASTSEQMASTER,
+		false: multicast.TypeTOFIFOMULTICASTSEQWORKER,
 	},
 	registrygrpc.MulticastType_TOMULTICASTSC: {
-		true:  multicast.Type_TOMULTICASTSC,
-		false: multicast.Type_TOMULTICASTSC,
+		true:  multicast.TypeTOMULTICASTSC,
+		false: multicast.TypeTOMULTICASTSC,
 	},
 	registrygrpc.MulticastType_COMULTICAST: {
-		true:  multicast.Type_COMULTICAST,
-		false: multicast.Type_COMULTICAST,
+		true:  multicast.TypeCOMULTICAST,
+		false: multicast.TypeCOMULTICAST,
 	},
 	registrygrpc.MulticastType_TOCOMULTICAST: {
-		true:  multicast.Type_TOCOMULTICASTMASTER,
-		false: multicast.Type_TOCOMULTICASTWORKER,
+		true:  multicast.TypeTOCOMULTICASTMASTER,
+		false: multicast.TypeTOCOMULTICASTWORKER,
 	},
 }

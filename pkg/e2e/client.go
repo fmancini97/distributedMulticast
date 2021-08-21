@@ -5,7 +5,7 @@ import (
 	"errors"
 	log "github.com/sirupsen/logrus"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/communication"
-	e2egrpc "gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/e2e/e2egrpc"
+	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/e2e/e2egrpc"
 	"google.golang.org/grpc"
 	"math/rand"
 	"sync"

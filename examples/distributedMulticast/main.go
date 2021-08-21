@@ -151,7 +151,7 @@ func main() {
 		}
 	}
 
-	multicaster, err := multicast.MulticastInitializers[mtType](multicastId, clientId, dlv, e2eConnections)
+	multicaster, err := multicast.Initializers[mtType](multicastId, clientId, dlv, e2eConnections)
 
 	if err != nil {
 		logger.WithField("error", err).Fatal("Error while initializing multicaster")

@@ -1,4 +1,4 @@
-package main
+package distribuitedmulticast
 
 import (
 	"context"
@@ -16,67 +16,77 @@ import (
 type HttpMethod int
 
 const (
-	GET HttpMethod = iota
-	POST
-	PUT
-	DELETE
-	HEAD
+	HttpMethodGET HttpMethod = iota
+	HttpMethodPOST
+	HttpMethodPUT
+	HttpMethodDELETE
+	HttpMethodHEAD
 )
 
 var (
-	HttpMethod_name = map[HttpMethod]string{
-		GET:    "GET",
-		POST:   "POST",
-		PUT:    "PUT",
-		DELETE: "DELETE",
-		HEAD:   "HEAD",
+	HttpMethodName = map[HttpMethod]string{
+		HttpMethodGET:    "GET",
+		HttpMethodPOST:   "POST",
+		HttpMethodPUT:    "PUT",
+		HttpMethodDELETE: "DELETE",
+		HttpMethodHEAD:   "HEAD",
 	}
-	MulticastType_value = map[string]HttpMethod{
-		"GET":    GET,
-		"POST":   POST,
-		"PUT":    PUT,
-		"DELETE": DELETE,
-		"HEAD":   HEAD,
+	MulticastTypeValue = map[string]HttpMethod{
+		"GET":    HttpMethodGET,
+		"POST":   HttpMethodPOST,
+		"PUT":    HttpMethodPUT,
+		"DELETE": HttpMethodDELETE,
+		"HEAD":   HttpMethodHEAD,
 	}
 )
 
-func getRouterMethods(router *gin.RouterGroup) (map[HttpMethod]func(path string, handlers ...gin.HandlerFunc) gin.IRoutes, error) {
+var restAPI = map[string]map[HttpMethod]func(ctx *gin.Context){
+	"/groups": {
+		HttpMethodGET: GetGroups,
+	},
+	"/registry/groups": {
+		HttpMethodGET: GetAllGroups,
+	},
+	"/groups/:id": {
+		HttpMethodGET:    GetGroupById,
+		HttpMethodPUT:    CreateGroup,
+		HttpMethodPOST:   StartGroup,
+		HttpMethodDELETE: CloseGroup,
+	},
+	"/messages/:groupId": {
+		HttpMethodGET: GetMessages,
+		HttpMethodPUT: SendMessage,
+	},
+	"/messages/:groupId/:messagePos": {
+		HttpMethodGET: GetMessageByPos,
+	},
+}
+
+func GetRestAPI() map[string]map[HttpMethod]func(ctx *gin.Context) {
+	api := make(map[string]map[HttpMethod]func(ctx *gin.Context))
+
+	for key, value := range restAPI {
+		api[key] = value
+	}
+
+	return api
+}
+
+func GetRouterMethods(router *gin.RouterGroup) (map[HttpMethod]func(path string, handlers ...gin.HandlerFunc) gin.IRoutes, error) {
 	routerMap := make(map[HttpMethod]func(path string, handlers ...gin.HandlerFunc) gin.IRoutes)
 
-	routerMap[GET] = router.GET
-	routerMap[POST] = router.POST
-	routerMap[PUT] = router.PUT
-	routerMap[DELETE] = router.DELETE
-	routerMap[HEAD] = router.HEAD
+	routerMap[HttpMethodGET] = router.GET
+	routerMap[HttpMethodPOST] = router.POST
+	routerMap[HttpMethodPUT] = router.PUT
+	routerMap[HttpMethodDELETE] = router.DELETE
+	routerMap[HttpMethodHEAD] = router.HEAD
 
 	return routerMap, nil
 
 }
 
-var restAPI = map[string]map[HttpMethod]func(ctx *gin.Context){
-	"/groups": {
-		GET: getGroups,
-	},
-	"/registry/groups": {
-		GET: getAllGroups,
-	},
-	"/groups/:id": {
-		GET:    getGroupById,
-		PUT:    createGroup,
-		POST:   startGroup,
-		DELETE: closeGroup,
-	},
-	"/messages/:groupId": {
-		GET: getMessages,
-		PUT: sendMessage,
-	},
-	"/messages/:groupId/:messagePos": {
-		GET: getMessageByPos,
-	},
-}
-
 // GET /groups
-func getGroups(ctx *gin.Context) {
+func GetGroups(ctx *gin.Context) {
 	groups := make([]*MulticastGroupInfo, 0)
 
 	groupsMu.RLock()
@@ -92,13 +102,13 @@ func getGroups(ctx *gin.Context) {
 }
 
 // GET /registry/groups
-func getAllGroups(ctx *gin.Context) {
+func GetAllGroups(ctx *gin.Context) {
 	groups := make([]*MulticastGroupInfo, 0)
 
-	stream, err := registryClient.List(context.Background(), nil)
+	stream, err := registryClient.List(context.Background(), &registrygrpc.Empty{})
 
 	if err != nil {
-		ctx.IndentedJSON(http.StatusInternalServerError, gin.H{"error": err})
+		ctx.IndentedJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -126,7 +136,7 @@ func getAllGroups(ctx *gin.Context) {
 	}
 
 	if err != io.EOF {
-		ctx.IndentedJSON(http.StatusInternalServerError, gin.H{"error": err})
+		ctx.IndentedJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -134,7 +144,7 @@ func getAllGroups(ctx *gin.Context) {
 }
 
 // GET /groups/:id
-func getGroupById(ctx *gin.Context) {
+func GetGroupById(ctx *gin.Context) {
 	id := ctx.Param("id")
 
 	groupsMu.RLock()
@@ -143,7 +153,7 @@ func getGroupById(ctx *gin.Context) {
 	group, ok := multicastGroups[id]
 
 	if !ok {
-		ctx.IndentedJSON(http.StatusNotFound, gin.H{"message": "group not found"})
+		ctx.IndentedJSON(http.StatusNotFound, gin.H{"error": "group not found"})
 		return
 	}
 
@@ -154,7 +164,7 @@ func getGroupById(ctx *gin.Context) {
 }
 
 // PUT /groups/:id
-func createGroup(ctx *gin.Context) {
+func CreateGroup(ctx *gin.Context) {
 	var config GroupConfig
 
 	groupId := ctx.Param("id")
@@ -162,14 +172,14 @@ func createGroup(ctx *gin.Context) {
 	err := ctx.BindJSON(&config)
 
 	if err != nil {
-		ctx.IndentedJSON(http.StatusBadRequest, gin.H{"message": err})
+		ctx.IndentedJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
 	multicastType, ok := multicastregistry.MulticastType[config.MulticastType]
 
 	if !ok {
-		ctx.IndentedJSON(http.StatusBadRequest, gin.H{"message": "MulticastType not supported", "supported": multicastregistry.MulticastTypes})
+		ctx.IndentedJSON(http.StatusBadRequest, gin.H{"error": "MulticastType not supported", "supported": multicastregistry.MulticastTypes})
 		return
 	}
 
@@ -179,7 +189,7 @@ func createGroup(ctx *gin.Context) {
 	group, ok := multicastGroups[groupId]
 
 	if ok {
-		ctx.IndentedJSON(http.StatusConflict, gin.H{"message": "group already exists"})
+		ctx.IndentedJSON(http.StatusConflict, gin.H{"error": "group already exists"})
 		return
 	}
 
@@ -190,7 +200,7 @@ func createGroup(ctx *gin.Context) {
 	})
 
 	if err != nil {
-		ctx.IndentedJSON(http.StatusInternalServerError, gin.H{"error": err})
+		ctx.IndentedJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -226,7 +236,7 @@ func createGroup(ctx *gin.Context) {
 }
 
 // POST /groups/:id
-func startGroup(ctx *gin.Context) {
+func StartGroup(ctx *gin.Context) {
 
 	groupId := ctx.Param("id")
 
@@ -236,7 +246,7 @@ func startGroup(ctx *gin.Context) {
 	group, ok := multicastGroups[groupId]
 
 	if !ok {
-		ctx.IndentedJSON(http.StatusNotFound, gin.H{"message": "group not found"})
+		ctx.IndentedJSON(http.StatusNotFound, gin.H{"error": "group not found"})
 		return
 	}
 
@@ -247,7 +257,7 @@ func startGroup(ctx *gin.Context) {
 	_, err := registryClient.StartGroup(context.Background(), &registrygrpc.RequestData{GroupId: group.group.MulticastId, ClientId: group.clientId})
 	if err != nil {
 		//logger.WithField("error", err).Fatal("Error while starting Communication")
-		ctx.IndentedJSON(http.StatusInternalServerError, gin.H{"error": err})
+		ctx.IndentedJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -255,7 +265,7 @@ func startGroup(ctx *gin.Context) {
 }
 
 // DELETE /groups/:id
-func closeGroup(ctx *gin.Context) {
+func CloseGroup(ctx *gin.Context) {
 
 	groupId := ctx.Param("id")
 
@@ -265,7 +275,7 @@ func closeGroup(ctx *gin.Context) {
 	group, ok := multicastGroups[groupId]
 
 	if !ok {
-		ctx.IndentedJSON(http.StatusNotFound, gin.H{"message": "group not found"})
+		ctx.IndentedJSON(http.StatusNotFound, gin.H{"error": "group not found"})
 		return
 	}
 
@@ -273,18 +283,18 @@ func closeGroup(ctx *gin.Context) {
 	defer group.groupMu.RUnlock()
 
 	if registrygrpc.Status(registrygrpc.Status_value[group.group.Status]) != registrygrpc.Status_ACTIVE {
-		ctx.IndentedJSON(http.StatusNotFound, gin.H{"message": "group not active"})
+		ctx.IndentedJSON(http.StatusNotFound, gin.H{"error": "group not active"})
 		return
 	}
 
 	err := group.multicaster.SendToAll(communication.Message{
 		Metadata: map[string]string{
-			fmt.Sprintf("%s:cmd", appHeader): AppCmd_Name[CLOSE],
+			fmt.Sprintf("%s:cmd", appHeader): AppCmdName[CLOSE],
 		},
 		Payload: nil,
 	})
 	if err != nil {
-		ctx.IndentedJSON(http.StatusInternalServerError, gin.H{"error": err})
+		ctx.IndentedJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -292,7 +302,7 @@ func closeGroup(ctx *gin.Context) {
 }
 
 // GET /messages/:groupId
-func getMessages(ctx *gin.Context) {
+func GetMessages(ctx *gin.Context) {
 	groupId := ctx.Param("groupId")
 
 	groupsMu.RLock()
@@ -301,7 +311,7 @@ func getMessages(ctx *gin.Context) {
 	group, ok := multicastGroups[groupId]
 
 	if !ok {
-		ctx.IndentedJSON(http.StatusNotFound, gin.H{"message": "group not found"})
+		ctx.IndentedJSON(http.StatusNotFound, gin.H{"error": "group not found"})
 		return
 	}
 
@@ -311,19 +321,15 @@ func getMessages(ctx *gin.Context) {
 	ctx.IndentedJSON(http.StatusOK, group.messages)
 }
 
-type JSONMessage struct {
-	Payload string `json:"payload"`
-}
-
 // PUT /messages/:groupId
-func sendMessage(ctx *gin.Context) {
+func SendMessage(ctx *gin.Context) {
 	var message communication.Message
 	groupId := ctx.Param("groupId")
 
 	err := ctx.BindJSON(&message)
 
 	if err != nil {
-		ctx.IndentedJSON(http.StatusBadRequest, gin.H{"error": err})
+		ctx.IndentedJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -345,13 +351,13 @@ func sendMessage(ctx *gin.Context) {
 	defer group.groupMu.RUnlock()
 
 	if registrygrpc.Status(registrygrpc.Status_value[group.group.Status]) != registrygrpc.Status_ACTIVE {
-		ctx.IndentedJSON(http.StatusTooEarly, gin.H{"message": "group not ready"})
+		ctx.IndentedJSON(http.StatusTooEarly, gin.H{"error": "group not ready"})
 		return
 	}
 
 	err = group.multicaster.SendToAll(message)
 	if err != nil {
-		ctx.IndentedJSON(http.StatusInternalServerError, gin.H{"error": err})
+		ctx.IndentedJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -359,7 +365,7 @@ func sendMessage(ctx *gin.Context) {
 }
 
 // GET /messages/:groupId/:messagePos
-func getMessageByPos(ctx *gin.Context) {
+func GetMessageByPos(ctx *gin.Context) {
 	groupId := ctx.Param("groupId")
 
 	messagePosString := ctx.Param("messagePos")
@@ -367,7 +373,7 @@ func getMessageByPos(ctx *gin.Context) {
 	messagePos, err := strconv.Atoi(messagePosString)
 
 	if err != nil {
-		ctx.IndentedJSON(http.StatusBadRequest, gin.H{"error": err})
+		ctx.IndentedJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -382,7 +388,7 @@ func getMessageByPos(ctx *gin.Context) {
 	group, ok := multicastGroups[groupId]
 
 	if !ok {
-		ctx.IndentedJSON(http.StatusNotFound, gin.H{"message": "group not found"})
+		ctx.IndentedJSON(http.StatusNotFound, gin.H{"error": "group not found"})
 		return
 	}
 

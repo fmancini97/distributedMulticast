@@ -1,4 +1,4 @@
-package main
+package distribuitedmulticast
 
 import (
 	"context"
@@ -9,9 +9,50 @@ import (
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/communication"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/e2e"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/multicast"
+	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/multicastregistry"
 	registrygrpc "gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/multicastregistry/registryrpc"
+	"sync"
 	"time"
 )
+
+var (
+	multicastGroups map[string]*MulticastGroup
+	groupsMu        sync.RWMutex
+	registryClient  registrygrpc.RegistryClient
+	grpcPort        uint64
+)
+
+func init() {
+	multicastGroups = make(map[string]*MulticastGroup)
+}
+
+type MulticastGroup struct {
+	clientId    string
+	group       *MulticastGroupInfo
+	groupMu     sync.RWMutex
+	multicaster multicast.Multicast
+	messages    []communication.Message
+	messageMu   sync.RWMutex
+}
+
+type MulticastGroupInfo struct {
+	MulticastId      string            `json:"multicast_id"`
+	MulticastType    string            `json:"multicast_type"`
+	ReceivedMessages int               `json:"received_messages"`
+	Status           string            `json:"status"`
+	Members          map[string]Member `json:"members"`
+	Error            error             `json:"error"`
+}
+
+type Member struct {
+	MemberId string `json:"member_id"`
+	Address  string `json:"address"`
+	Ready    bool   `json:"ready"`
+}
+
+type GroupConfig struct {
+	MulticastType string `json:"multicast_type"`
+}
 
 const appHeader = "distributed-multicast"
 
@@ -22,15 +63,15 @@ const (
 )
 
 var (
-	AppCmd_Value = map[string]AppCmd{
+	AppCmdValue = map[string]AppCmd{
 		"CLOSE": CLOSE,
 	}
-	AppCmd_Name = map[AppCmd]string{
+	AppCmdName = map[AppCmd]string{
 		CLOSE: "CLOSE",
 	}
 
 	AppCmds = map[AppCmd]func(multicastGroup *MulticastGroup){
-		CLOSE: close,
+		CLOSE: closeMulticastGroup,
 	}
 )
 
@@ -49,7 +90,7 @@ func (gDlv *GroupDeliverer) Deliver(message communication.Message) error {
 	cmdName, ok := message.Metadata[fmt.Sprintf("%s:%s", appHeader, "cmd")]
 
 	if ok {
-		cmd, ok := AppCmd_Value[cmdName]
+		cmd, ok := AppCmdValue[cmdName]
 		if ok {
 			cmdFunc, ok := AppCmds[cmd]
 			if ok {
@@ -64,7 +105,17 @@ func (gDlv *GroupDeliverer) Deliver(message communication.Message) error {
 	return nil
 }
 
-func close(multicastGroup *MulticastGroup) {
+func Initialize(clientPort uint64, registryAddr string) error {
+	grpcPort = clientPort
+	var err error
+
+	registryClient, err = multicastregistry.Connect(registryAddr)
+
+	return err
+
+}
+
+func closeMulticastGroup(multicastGroup *MulticastGroup) {
 	multicastGroup.groupMu.Lock()
 
 	if registrygrpc.Status(registrygrpc.Status_value[multicastGroup.group.Status]) != registrygrpc.Status_ACTIVE {
@@ -190,7 +241,7 @@ func initializeMulticaster(multicastGroup *MulticastGroup, isMaster bool) error 
 		}
 	}
 
-	multicaster, err := multicast.MulticastInitializers[mtType](multicastGroup.group.MulticastId, multicastGroup.clientId, dlv, e2eConnections)
+	multicaster, err := multicast.Initializers[mtType](multicastGroup.group.MulticastId, multicastGroup.clientId, dlv, e2eConnections)
 
 	if err != nil {
 		return err

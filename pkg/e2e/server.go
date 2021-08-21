@@ -4,7 +4,7 @@ import (
 	"context"
 	log "github.com/sirupsen/logrus"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/communication"
-	e2egrpc "gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/e2e/e2egrpc"
+	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/e2e/e2egrpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
