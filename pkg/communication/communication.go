@@ -1,8 +1,8 @@
 package communication
 
 type Message struct {
-	Metadata map[string]string
-	Payload  []byte
+	Metadata map[string]string `json:"metadata"`
+	Payload  []byte            `json:"payload"`
 }
 
 func NewMessage(payload []byte) Message {

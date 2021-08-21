@@ -158,6 +158,21 @@ func (scm *scMulticast) SendToAll(message communication.Message) error {
 	return scm.fifoMulticaster.multicaster.SendToAll(message)
 }
 
+func (scm *scMulticast) Close() error {
+	scm.mtId = ""
+	scm.clientId = ""
+	scm.numMembers = 0
+	scm.holdBackQueue = nil
+	scm.waitingElems = nil
+	scm.msgsCounters = nil
+	scm.deliverer = nil
+
+	fifoMulticaster := scm.fifoMulticaster
+	scm.fifoMulticaster = nil
+
+	return fifoMulticaster.Close()
+}
+
 func (scm *scMulticast) Deliver(message communication.Message) error {
 
 	scLog.WithField("message", message).Debug("New message received")

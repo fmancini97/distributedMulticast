@@ -1,7 +1,7 @@
 package multicastregistry
 
 import (
-	registrygrpc "gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/multicastregistry/grpc"
+	registrygrpc "gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/multicastregistry/registryrpc"
 	"google.golang.org/grpc"
 )
 

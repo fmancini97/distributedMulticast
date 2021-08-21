@@ -5,7 +5,7 @@ import (
 	"errors"
 	log "github.com/sirupsen/logrus"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/communication"
-	e2egrpc "gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/e2e/grpc"
+	e2egrpc "gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/e2e/e2egrpc"
 	"google.golang.org/grpc"
 	"math/rand"
 	"sync"
@@ -87,10 +87,7 @@ func (gs *GrpcSender) Send(streamId string, message communication.Message) error
 		time.Sleep(time.Duration(gs.meta.rnd.Intn(int(gs.meta.delay))) * time.Millisecond)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*60)
-	defer cancel()
-
-	_, err := gs.meta.client.Send(ctx, &e2egrpc.Message{Id: streamId, Metadata: message.Metadata, Payload: message.Payload})
+	_, err := gs.meta.client.Send(context.Background(), &e2egrpc.Message{Id: streamId, Metadata: message.Metadata, Payload: message.Payload})
 	return err
 }
 

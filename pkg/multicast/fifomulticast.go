@@ -114,6 +114,19 @@ func (fifom *fifoMulticast) SendToAll(message communication.Message) error {
 	return fifom.multicaster.SendToAll(message)
 }
 
+func (fifom *fifoMulticast) Close() error {
+	fifom.mtId = ""
+	fifom.clientId = ""
+	fifom.counter = 0
+	fifom.members = nil
+	fifom.deliverer = nil
+
+	multicaster := fifom.multicaster
+	fifom.multicaster = nil
+
+	return multicaster.Close()
+}
+
 func (fifom *fifoMulticast) Deliver(message communication.Message) error {
 
 	fifoLog.WithField("message", message).Debug("New message received")

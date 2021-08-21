@@ -97,18 +97,6 @@ func (vcm *vcMulticast) Init(multicaster Multicast) error {
 		return err
 	}
 
-	holdBackQueue := priorityqueue.New(func(i interface{}, i2 interface{}) bool {
-		sco1 := i.(scOrder)
-		sco2 := i2.(scOrder)
-		if sco1.timestamp == sco2.timestamp {
-			return sco1.clientId < sco2.clientId
-		} else {
-			return sco1.timestamp < sco2.timestamp
-		}
-	})
-
-	heap.Init(holdBackQueue)
-
 	vcm.clientId = clientId
 	vcm.mtId = mtId
 	vcm.group = vcGroup
@@ -152,6 +140,20 @@ func (vcm *vcMulticast) SendToAll(message communication.Message) error {
 	vcLog.WithFields(log.Fields{"client_id": vcm.clientId, "timestamp": timestampVector, "message": message}).Debug("Multicasting message")
 
 	return vcm.multicaster.SendToAll(message)
+}
+
+func (vcm *vcMulticast) Close() error {
+	vcm.clientId = ""
+	vcm.mtId = ""
+	vcm.group = nil
+	vcm.membersId = nil
+	vcm.timestamp = nil
+	multicaster := vcm.multicaster
+
+	vcm.multicaster = nil
+	vcm.deliverer = nil
+
+	return multicaster.Close()
 }
 
 func (vcm *vcMulticast) Deliver(message communication.Message) error {

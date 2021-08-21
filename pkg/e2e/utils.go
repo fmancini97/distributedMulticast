@@ -4,7 +4,7 @@ import (
 	"errors"
 	log "github.com/sirupsen/logrus"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/communication"
-	e2egrpc "gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/e2e/grpc"
+	e2egrpc "gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/e2e/e2egrpc"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/multicast"
 	"google.golang.org/grpc"
 	"sync"
@@ -37,6 +37,20 @@ func AddDeliverer(id string, deliverer communication.Deliverer) (err error) {
 	dlvs.streams[id] = deliverer
 
 	return
+}
+
+func RemoveDeliverer(id string) (err error) {
+	dlvs.mu.Lock()
+	defer dlvs.mu.Unlock()
+
+	if _, ok := dlvs.streams[id]; !ok {
+		err = errors.New("notExists")
+		return
+	}
+
+	delete(dlvs.streams, id)
+
+	return nil
 }
 
 func Register(s grpc.ServiceRegistrar) (err error) {

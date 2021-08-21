@@ -1,7 +1,7 @@
 syntax = "proto3";
 
-package grpc;
-option go_package = "gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/e2e/grpc";
+package e2e;
+option go_package = "gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/e2e/e2egrpc";
 
 service E2e {
   rpc send (Message) returns (Empty) {}

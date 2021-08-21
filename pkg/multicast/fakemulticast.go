@@ -17,6 +17,16 @@ func (f *fakeMulticast) SendToAll(message communication.Message) error {
 	return nil
 }
 
+func (f *fakeMulticast) Close() error {
+	f.mtId = ""
+	f.clientId = ""
+	f.group = nil
+	f.deliverer = nil
+	close(f.mtChan)
+	f.mtChan = nil
+	return nil
+}
+
 func (f *fakeMulticast) decorate(dlv communication.Deliverer) (communication.Deliverer, error) {
 	oldDeliverer := f.deliverer
 	f.deliverer = dlv

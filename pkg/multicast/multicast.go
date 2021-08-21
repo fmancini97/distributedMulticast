@@ -7,6 +7,7 @@ import (
 
 type Multicast interface {
 	SendToAll(message communication.Message) error
+	Close() error
 	decorate(dlv communication.Deliverer) (communication.Deliverer, error)
 	getGroup() ([]string, error)
 	getMTId() (string, error)
@@ -29,6 +30,18 @@ func (cnt *Container) SendToAll(message communication.Message) error {
 		return errors.New("NilPointer")
 	}
 	return cnt.mlt.SendToAll(message)
+}
+
+func (cnt *Container) Close() error {
+	if cnt.mlt == nil {
+		return errors.New("NilPointer")
+	}
+	cnt.dlv = nil
+	multicaster := cnt.mlt
+
+	cnt.mlt = nil
+	return multicaster.Close()
+
 }
 
 func (cnt *Container) decorate(dlv communication.Deliverer) (communication.Deliverer, error) {

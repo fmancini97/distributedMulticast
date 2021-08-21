@@ -60,6 +60,21 @@ func (bm *bmulticast) SendToAll(message communication.Message) error {
 	return err
 }
 
+func (bm *bmulticast) Close() error {
+	for _, member := range bm.members {
+		err := member.Sender.Close()
+		if err != nil {
+			return err
+		}
+	}
+	bm.mtId = ""
+	bm.clientId = ""
+	bm.members = nil
+	bm.deliverer = nil
+
+	return nil
+}
+
 func (bm *bmulticast) Deliver(message communication.Message) error {
 	bmLog.WithField("message", message).Debug("Delivering message")
 	return bm.deliverer.Deliver(message)

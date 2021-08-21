@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	log "github.com/sirupsen/logrus"
-	registrygrpc "gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/multicastregistry/grpc"
+	registrygrpc "gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/multicastregistry/registryrpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
@@ -163,6 +163,56 @@ func (s *server) StartGroup(ctx context.Context, in *registrygrpc.RequestData) (
 	return mGroup.groupInfo, nil
 }
 
+func (s *server) CloseGroup(ctx context.Context, in *registrygrpc.RequestData) (*registrygrpc.GroupInfo, error) {
+	source, ok := peer.FromContext(ctx)
+
+	if !ok {
+		return nil, status.Errorf(codes.InvalidArgument, "Missing source address")
+	}
+
+	src := source.Addr.String()
+
+	multicastId := in.GroupId
+	clientId := in.ClientId
+
+	logger := registryLog.WithFields(log.Fields{"user_ip": src, "multicast_id": multicastId, "client_id": clientId})
+	logger.WithField("group", in).Debug("Retrieving status")
+
+	groupsMu.RLock()
+	defer groupsMu.RUnlock()
+
+	mGroup, ok := groups[multicastId]
+
+	if !ok {
+		return nil, status.Errorf(codes.NotFound, "Group not found")
+	}
+
+	mGroup.mu.Lock()
+	defer mGroup.mu.Unlock()
+
+	if mGroup.groupInfo.Status != registrygrpc.Status_ACTIVE && mGroup.groupInfo.Status != registrygrpc.Status_CLOSING {
+		return nil, status.Errorf(codes.Canceled, "Cannot start group")
+	}
+
+	member, ok := mGroup.groupInfo.Members[clientId]
+
+	if !ok {
+		return nil, status.Errorf(codes.PermissionDenied, "Not registered to the group")
+	}
+
+	mGroup.groupInfo.Status = registrygrpc.Status_CLOSING
+
+	if member.Ready {
+		member.Ready = false
+		mGroup.groupInfo.ReadyMembers--
+		if mGroup.groupInfo.ReadyMembers == 0 {
+			mGroup.groupInfo.Status = registrygrpc.Status_CLOSED
+		}
+	}
+
+	return mGroup.groupInfo, nil
+}
+
 func (s *server) Ready(ctx context.Context, in *registrygrpc.RequestData) (*registrygrpc.GroupInfo, error) {
 
 	source, ok := peer.FromContext(ctx)
@@ -212,4 +262,20 @@ func (s *server) Ready(ctx context.Context, in *registrygrpc.RequestData) (*regi
 
 	return mGroup.groupInfo, nil
 
+}
+
+func (s *server) List(_ *registrygrpc.Empty, stream registrygrpc.Registry_ListServer) error {
+	groupsMu.RLock()
+	defer groupsMu.RUnlock()
+
+	for _, mGroup := range groups {
+		mGroup.mu.RLock()
+		err := stream.Send(mGroup.groupInfo)
+		mGroup.mu.RUnlock()
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

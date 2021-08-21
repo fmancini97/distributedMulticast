@@ -152,6 +152,22 @@ func (seq *seqMulticast) SendToAll(message communication.Message) error {
 	return seq.multicaster.SendToAll(message)
 }
 
+func (seq *seqMulticast) Close() error {
+	seq.mtId = ""
+	seq.clientId = ""
+	seq.localCounter = 0
+	seq.globalCounter = 0
+	seq.group = nil
+	seq.holdBackQueue = nil
+	seq.waitingItems = nil
+	seq.deliverer = nil
+
+	multicaster := seq.multicaster
+	seq.multicaster = nil
+
+	return multicaster.Close()
+}
+
 func (seq *seqMulticast) Deliver(message communication.Message) error {
 
 	logger := seqLog.WithField("method", "Deliver")
@@ -260,6 +276,13 @@ func (seq *seqMulticastMaster) Init(multicaster Multicast) error {
 
 func (seq *seqMulticastMaster) SendToAll(message communication.Message) error {
 	return seq.seqmt.SendToAll(message)
+}
+
+func (seq *seqMulticastMaster) Close() error {
+	seq.globalCounter = 0
+	seqWorker := seq.seqmt
+	seq.seqmt = nil
+	return seqWorker.Close()
 }
 
 func (seq *seqMulticastMaster) Deliver(message communication.Message) error {
