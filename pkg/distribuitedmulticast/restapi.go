@@ -2,11 +2,13 @@ package distribuitedmulticast
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/gin-gonic/gin"
+	log "github.com/sirupsen/logrus"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/communication"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/multicastregistry"
-	registrygrpc "gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/multicastregistry/registryrpc"
+	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/multicastregistry/registrygrpc"
 	"io"
 	"net/http"
 	"strconv"
@@ -47,17 +49,17 @@ var restAPI = map[string]map[HttpMethod]func(ctx *gin.Context){
 	"/registry/groups": {
 		HttpMethodGET: GetAllGroups,
 	},
-	"/groups/:id": {
+	"/groups/:multicastId": {
 		HttpMethodGET:    GetGroupById,
 		HttpMethodPUT:    CreateGroup,
 		HttpMethodPOST:   StartGroup,
 		HttpMethodDELETE: CloseGroup,
 	},
-	"/messages/:groupId": {
+	"/messages/:multicastId": {
 		HttpMethodGET: GetMessages,
 		HttpMethodPUT: SendMessage,
 	},
-	"/messages/:groupId/:messagePos": {
+	"/messages/:multicastId/:messagePos": {
 		HttpMethodGET: GetMessageByPos,
 	},
 }
@@ -85,8 +87,9 @@ func GetRouterMethods(router *gin.RouterGroup) (map[HttpMethod]func(path string,
 
 }
 
-// GET /groups
+// GetGroups returns the groups to which the node is registered
 func GetGroups(ctx *gin.Context) {
+
 	groups := make([]*MulticastGroupInfo, 0)
 
 	groupsMu.RLock()
@@ -101,13 +104,19 @@ func GetGroups(ctx *gin.Context) {
 	ctx.IndentedJSON(http.StatusOK, groups)
 }
 
-// GET /registry/groups
+// GetAllGroups returns all groups of the node registry
 func GetAllGroups(ctx *gin.Context) {
-	groups := make([]*MulticastGroupInfo, 0)
+
+	logger := dmLog.WithField("method", "GetAllGroups")
+
+	groups := make([]*RegistryGroupInfo, 0)
+
+	logger.Debug("Retrieving group infos from registry")
 
 	stream, err := registryClient.List(context.Background(), &registrygrpc.Empty{})
 
 	if err != nil {
+		logger.WithField("error", err).Error("Error while communicating with registry")
 		ctx.IndentedJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -126,33 +135,38 @@ func GetAllGroups(ctx *gin.Context) {
 			}
 		}
 
-		groups = append(groups, &MulticastGroupInfo{
-			MulticastId:      groupInfo.GroupId,
-			MulticastType:    registrygrpc.MulticastType_name[int32(groupInfo.MulticastType)],
-			ReceivedMessages: -1,
-			Status:           registrygrpc.Status_name[int32(groupInfo.Status)],
-			Members:          members,
+		groups = append(groups, &RegistryGroupInfo{
+			MulticastId:   groupInfo.MulticastId,
+			MulticastType: registrygrpc.MulticastType_name[int32(groupInfo.MulticastType)],
+			Status:        registrygrpc.Status_name[int32(groupInfo.Status)],
+			Members:       members,
 		})
 	}
 
 	if err != io.EOF {
+		logger.WithField("error", err).Error("Error while retrieving group info from registry")
 		ctx.IndentedJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
+	logger.Info("Returning groups")
+
 	ctx.IndentedJSON(http.StatusOK, groups)
 }
 
-// GET /groups/:id
+// GetGroupById returns group information based on input id
 func GetGroupById(ctx *gin.Context) {
-	id := ctx.Param("id")
+	multicastId := ctx.Param("multicastId")
+
+	logger := dmLog.WithFields(log.Fields{"method": "GetGroupById", "multicastId": multicastId})
 
 	groupsMu.RLock()
 	defer groupsMu.RUnlock()
 
-	group, ok := multicastGroups[id]
+	group, ok := multicastGroups[multicastId]
 
 	if !ok {
+		logger.Warn("Group not found")
 		ctx.IndentedJSON(http.StatusNotFound, gin.H{"error": "group not found"})
 		return
 	}
@@ -160,18 +174,23 @@ func GetGroupById(ctx *gin.Context) {
 	group.groupMu.RLock()
 	defer group.groupMu.RUnlock()
 
+	logger.Info("Returning group")
+
 	ctx.IndentedJSON(http.StatusOK, group.group)
 }
 
-// PUT /groups/:id
+// CreateGroup initializes a new multicast group.
 func CreateGroup(ctx *gin.Context) {
 	var config GroupConfig
 
-	groupId := ctx.Param("id")
+	multicastId := ctx.Param("multicastId")
+
+	logger := dmLog.WithFields(log.Fields{"method": "CreateGroup", "multicastId": multicastId})
 
 	err := ctx.BindJSON(&config)
 
 	if err != nil {
+		logger.WithField("error", err).Warn("Error while parsing request")
 		ctx.IndentedJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -179,6 +198,7 @@ func CreateGroup(ctx *gin.Context) {
 	multicastType, ok := multicastregistry.MulticastType[config.MulticastType]
 
 	if !ok {
+		logger.WithField("multicastType", multicastType).Warn("MulticastType not supported")
 		ctx.IndentedJSON(http.StatusBadRequest, gin.H{"error": "MulticastType not supported", "supported": multicastregistry.MulticastTypes})
 		return
 	}
@@ -186,20 +206,24 @@ func CreateGroup(ctx *gin.Context) {
 	groupsMu.Lock()
 	defer groupsMu.Unlock()
 
-	group, ok := multicastGroups[groupId]
+	group, ok := multicastGroups[multicastId]
 
 	if ok {
+		logger.Warn("Group already exists")
 		ctx.IndentedJSON(http.StatusConflict, gin.H{"error": "group already exists"})
 		return
 	}
 
+	logger.Info("Registering group to multicast registry")
+
 	registrationAns, err := registryClient.Register(context.Background(), &registrygrpc.RegistrationInfo{
-		GroupId:       groupId,
+		MulticastId:   multicastId,
 		MulticastType: multicastType,
-		ClientPort:    grpcPort,
+		ClientPort:    uint32(grpcPort),
 	})
 
 	if err != nil {
+		logger.WithField("error", err).Error("Error while registering group")
 		ctx.IndentedJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -217,7 +241,7 @@ func CreateGroup(ctx *gin.Context) {
 	group = &MulticastGroup{
 		clientId: registrationAns.ClientId,
 		group: &MulticastGroupInfo{
-			MulticastId:      registrationAns.GroupInfo.GroupId,
+			MulticastId:      registrationAns.GroupInfo.MulticastId,
 			MulticastType:    registrygrpc.MulticastType_name[int32(registrationAns.GroupInfo.MulticastType)],
 			ReceivedMessages: 0,
 			Status:           registrygrpc.Status_name[int32(registrationAns.GroupInfo.Status)],
@@ -228,24 +252,30 @@ func CreateGroup(ctx *gin.Context) {
 		groupMu:     sync.RWMutex{},
 	}
 
-	multicastGroups[registrationAns.GroupInfo.GroupId] = group
+	multicastGroups[registrationAns.GroupInfo.MulticastId] = group
+
+	logger.Info("Staring group initialization")
 
 	go initializeGroup(registrationAns.GroupInfo, group, len(registrationAns.GroupInfo.Members) == 1)
 
 	ctx.Status(http.StatusOK)
 }
 
-// POST /groups/:id
+// StartGroup completes the initialization phase of a multicast group.
+// The aforementioned group can now be used to perform multicast operations
 func StartGroup(ctx *gin.Context) {
 
-	groupId := ctx.Param("id")
+	multicastId := ctx.Param("multicastId")
+
+	logger := dmLog.WithFields(log.Fields{"method": "StartGroup", "multicastId": multicastId})
 
 	groupsMu.RLock()
 	defer groupsMu.RUnlock()
 
-	group, ok := multicastGroups[groupId]
+	group, ok := multicastGroups[multicastId]
 
 	if !ok {
+		logger.Warn("Group not found")
 		ctx.IndentedJSON(http.StatusNotFound, gin.H{"error": "group not found"})
 		return
 	}
@@ -253,28 +283,34 @@ func StartGroup(ctx *gin.Context) {
 	group.groupMu.RLock()
 	defer group.groupMu.RUnlock()
 
-	//logger.Info("Starting multicast group")
-	_, err := registryClient.StartGroup(context.Background(), &registrygrpc.RequestData{GroupId: group.group.MulticastId, ClientId: group.clientId})
+	logger.Info("Starting multicast group")
+	_, err := registryClient.StartGroup(context.Background(), &registrygrpc.RequestData{MulticastId: group.group.MulticastId, ClientId: group.clientId})
 	if err != nil {
-		//logger.WithField("error", err).Fatal("Error while starting Communication")
+		logger.WithField("error", err).Error("Error while staring multicast group")
 		ctx.IndentedJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
+	logger.Info("Group started")
+
 	ctx.Status(http.StatusOK)
 }
 
-// DELETE /groups/:id
+// CloseGroup closes a multicast group.
+// A closed group can no longer be used to multicast messages but received messages can still be read.
 func CloseGroup(ctx *gin.Context) {
 
-	groupId := ctx.Param("id")
+	multicastId := ctx.Param("multicastId")
+
+	logger := dmLog.WithFields(log.Fields{"method": "StartGroup", "multicastId": multicastId})
 
 	groupsMu.RLock()
 	defer groupsMu.RUnlock()
 
-	group, ok := multicastGroups[groupId]
+	group, ok := multicastGroups[multicastId]
 
 	if !ok {
+		logger.Warn("Group not found")
 		ctx.IndentedJSON(http.StatusNotFound, gin.H{"error": "group not found"})
 		return
 	}
@@ -283,9 +319,12 @@ func CloseGroup(ctx *gin.Context) {
 	defer group.groupMu.RUnlock()
 
 	if registrygrpc.Status(registrygrpc.Status_value[group.group.Status]) != registrygrpc.Status_ACTIVE {
-		ctx.IndentedJSON(http.StatusNotFound, gin.H{"error": "group not active"})
+		logger.Warn("Group not active")
+		ctx.IndentedJSON(http.StatusServiceUnavailable, gin.H{"error": "group not active"})
 		return
 	}
+
+	logger.Info("Sending closing command")
 
 	err := group.multicaster.SendToAll(communication.Message{
 		Metadata: map[string]string{
@@ -294,41 +333,27 @@ func CloseGroup(ctx *gin.Context) {
 		Payload: nil,
 	})
 	if err != nil {
+		logger.WithField("error", err).Error("Error while sending closing message")
 		ctx.IndentedJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
+	logger.Info("Closing procedure started")
+
 	ctx.Status(http.StatusOK)
 }
 
-// GET /messages/:groupId
-func GetMessages(ctx *gin.Context) {
-	groupId := ctx.Param("groupId")
-
-	groupsMu.RLock()
-	defer groupsMu.RUnlock()
-
-	group, ok := multicastGroups[groupId]
-
-	if !ok {
-		ctx.IndentedJSON(http.StatusNotFound, gin.H{"error": "group not found"})
-		return
-	}
-
-	group.messageMu.RLock()
-	defer group.messageMu.RUnlock()
-
-	ctx.IndentedJSON(http.StatusOK, group.messages)
-}
-
-// PUT /messages/:groupId
+// SendMessage sends a message in an active multicast group
 func SendMessage(ctx *gin.Context) {
 	var message communication.Message
-	groupId := ctx.Param("groupId")
+	multicastId := ctx.Param("multicastId")
+
+	logger := dmLog.WithFields(log.Fields{"method": "SendMessage", "multicastId": multicastId})
 
 	err := ctx.BindJSON(&message)
 
 	if err != nil {
+		logger.Warn("Error while parsing message")
 		ctx.IndentedJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -340,9 +365,10 @@ func SendMessage(ctx *gin.Context) {
 	groupsMu.RLock()
 	defer groupsMu.RUnlock()
 
-	group, ok := multicastGroups[groupId]
+	group, ok := multicastGroups[multicastId]
 
 	if !ok {
+		logger.Warn("Group not found")
 		ctx.IndentedJSON(http.StatusNotFound, gin.H{"error": "group not found"})
 		return
 	}
@@ -351,43 +377,83 @@ func SendMessage(ctx *gin.Context) {
 	defer group.groupMu.RUnlock()
 
 	if registrygrpc.Status(registrygrpc.Status_value[group.group.Status]) != registrygrpc.Status_ACTIVE {
+		logger.Warn("Group not active")
 		ctx.IndentedJSON(http.StatusTooEarly, gin.H{"error": "group not ready"})
 		return
 	}
 
+	logger.WithFields(log.Fields{"metadata": message.Metadata, "payload": message.Payload}).Info("Sending Message")
+
 	err = group.multicaster.SendToAll(message)
 	if err != nil {
+		logger.WithField("error", err).Error("Error while sending message")
 		ctx.IndentedJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
+	logger.Info("Message sent")
+
 	ctx.Status(http.StatusCreated)
 }
 
-// GET /messages/:groupId/:messagePos
+// GetMessages returns all messages received by a multicast group
+func GetMessages(ctx *gin.Context) {
+	multicastId := ctx.Param("multicastId")
+
+	logger := dmLog.WithFields(log.Fields{"method": "GetMessages", "multicastId": multicastId})
+
+	groupsMu.RLock()
+	defer groupsMu.RUnlock()
+
+	group, ok := multicastGroups[multicastId]
+
+	if !ok {
+		logger.Warn("Group not found")
+		ctx.IndentedJSON(http.StatusNotFound, gin.H{"error": "group not found"})
+		return
+	}
+
+	logger.Info("Retrieving messages")
+
+	group.messageMu.RLock()
+	defer group.messageMu.RUnlock()
+
+	logger.Info("Returning messages")
+
+	ctx.IndentedJSON(http.StatusOK, group.messages)
+}
+
+// GetMessageByPos returns the message at messagePos position of a multicast group
 func GetMessageByPos(ctx *gin.Context) {
-	groupId := ctx.Param("groupId")
+	multicastId := ctx.Param("multicastId")
 
 	messagePosString := ctx.Param("messagePos")
+
+	logger := dmLog.WithFields(log.Fields{"method": "GetMessageByPos", "multicastId": multicastId, "messagePos": messagePosString})
 
 	messagePos, err := strconv.Atoi(messagePosString)
 
 	if err != nil {
+		logger.WithField("error", err).Warn("Error while parsing input parameters")
 		ctx.IndentedJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
 	if messagePos < 0 {
+		logger.WithField("error", errors.New("negative position")).Warn("Error while parsing input parameters")
 		ctx.IndentedJSON(http.StatusBadRequest, gin.H{"error": "negative position"})
 		return
 	}
 
+	logger.Info("Retrieving message")
+
 	groupsMu.RLock()
 	defer groupsMu.RUnlock()
 
-	group, ok := multicastGroups[groupId]
+	group, ok := multicastGroups[multicastId]
 
 	if !ok {
+		logger.Warn("Group not found")
 		ctx.IndentedJSON(http.StatusNotFound, gin.H{"error": "group not found"})
 		return
 	}
@@ -400,6 +466,8 @@ func GetMessageByPos(ctx *gin.Context) {
 	if messagePos < len(group.messages) {
 		message = &group.messages[messagePos]
 	}
+
+	logger.Info("Returning message")
 
 	ctx.IndentedJSON(http.StatusOK, message)
 }

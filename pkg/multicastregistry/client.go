@@ -1,14 +1,14 @@
 package multicastregistry
 
 import (
-	registrygrpc "gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/multicastregistry/registryrpc"
+	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/multicastregistry/registrygrpc"
 	"google.golang.org/grpc"
 )
 
 func Connect(address string) (registrygrpc.RegistryClient, error) {
-	logger := registryLog.WithField("address", address)
+	logger := registryClientLog.WithField("address", address)
 
-	logger.Debug("Connecting")
+	logger.Debug("Connecting to registry server")
 
 	conn, err := grpc.Dial(address, grpc.WithInsecure(), grpc.WithBlock())
 	if err != nil {

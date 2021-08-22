@@ -16,21 +16,24 @@ type deliverers struct {
 }
 
 var (
-	dlvs   deliverers
-	e2eLog *log.Entry
+	dlvs         deliverers
+	e2eLogClient *log.Entry
+	e2eLogServer *log.Entry
 )
 
 func init() {
 	dlvs.streams = make(map[string]communication.Deliverer)
-	e2eLog = log.WithField("layer", "e2e")
+	e2eLogClient = log.WithField("layer", "e2e_client")
+	e2eLogServer = log.WithField("layer", "e2e_server")
+
 }
 
-func AddDeliverer(id string, deliverer communication.Deliverer) (err error) {
+func RegisterDeliverer(id string, deliverer communication.Deliverer) (err error) {
 	dlvs.mu.Lock()
 	defer dlvs.mu.Unlock()
 
 	if _, ok := dlvs.streams[id]; ok {
-		err = errors.New("alreadyExists")
+		err = errors.New("deliverer already exists")
 		return
 	}
 
@@ -44,7 +47,7 @@ func RemoveDeliverer(id string) (err error) {
 	defer dlvs.mu.Unlock()
 
 	if _, ok := dlvs.streams[id]; !ok {
-		err = errors.New("notExists")
+		err = errors.New("deliverer not found")
 		return
 	}
 
@@ -73,7 +76,6 @@ func InitializeConnection(id, address string, delay uint) (*multicast.E2EMember,
 
 func InitializeConnections(addresses []string, delay uint) ([]*multicast.E2EMember, error) {
 	// Taking other connections
-
 	e2eConnections := make([]*multicast.E2EMember, 0)
 
 	for _, address := range addresses {

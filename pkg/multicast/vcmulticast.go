@@ -21,18 +21,7 @@ var (
 )
 
 func init() {
-	vcLog = log.WithField("layer", "fifomulticast")
-}
-
-type vcMulticast struct {
-	mtId           string
-	clientId       string
-	membersId      []string
-	localTimestamp uint64
-	timestamp      map[string]uint64
-	group          map[string]*vcMember
-	deliverer      communication.Deliverer
-	multicaster    Multicast
+	vcLog = log.WithField("layer", "vcMulticast")
 }
 
 type vcMember struct {
@@ -47,16 +36,222 @@ type waitingMessage struct {
 	missingChecks []string // Client id which does not match the delivery requirements
 }
 
-func (vcm *vcMulticast) getGroup() ([]string, error) {
-	return vcm.membersId, nil
+type vcMulticast struct {
+	multicastId    string
+	clientId       string
+	membersId      []string
+	localTimestamp uint64
+	timestamp      map[string]uint64
+	group          map[string]*vcMember
+	deliverer      communication.Deliverer
+	multicaster    Multicast
 }
 
-func (vcm *vcMulticast) getMTId() (string, error) {
-	return vcm.mtId, nil
+func (vcm *vcMulticast) SendToAll(message communication.Message) error {
+
+	timestampBytes := new(bytes.Buffer)
+
+	encoder := gob.NewEncoder(timestampBytes)
+
+	localTimestamp := atomic.AddUint64(&vcm.localTimestamp, 1)
+
+	timestampVector := make(map[string]uint64, len(vcm.timestamp))
+
+	for clientId, timestamp := range vcm.timestamp {
+		timestampVector[clientId] = timestamp
+	}
+
+	timestampVector[vcm.clientId] = localTimestamp
+
+	err := encoder.Encode(timestampVector)
+
+	if err != nil {
+		return errors.New("vcMulticast: " + err.Error())
+	}
+
+	timestampB64 := base64.StdEncoding.EncodeToString(timestampBytes.Bytes())
+
+	message.Metadata[fmt.Sprintf("%s:timestamp", vcHeader)] = timestampB64
+
+	message.Metadata[fmt.Sprintf("%s:clientId", vcHeader)] = vcm.clientId
+
+	vcLog.WithFields(log.Fields{
+		"method":      "SendToAll",
+		"multicastId": vcm.multicastId,
+		"clientId":    vcm.clientId,
+		"timestamp":   timestampVector,
+		"metadata":    message.Metadata,
+		"payload":     message.Payload,
+	}).Debug("Multicasting message")
+
+	return vcm.multicaster.SendToAll(message)
+}
+
+func (vcm *vcMulticast) Close() error {
+	vcLog.WithFields(log.Fields{
+		"method":      "Close",
+		"multicastId": vcm.multicastId,
+	}).Debug("Closing multicaster")
+
+	vcm.clientId = ""
+	vcm.multicastId = ""
+	vcm.group = nil
+	vcm.membersId = nil
+	vcm.timestamp = nil
+	multicaster := vcm.multicaster
+
+	vcm.multicaster = nil
+	vcm.deliverer = nil
+
+	return multicaster.Close()
+}
+
+func (vcm *vcMulticast) getMulticastId() (string, error) {
+	return vcm.multicastId, nil
 }
 
 func (vcm *vcMulticast) getClientId() (string, error) {
 	return vcm.clientId, nil
+}
+
+func (vcm *vcMulticast) getGroup() ([]string, error) {
+	return vcm.membersId, nil
+}
+
+func (vcm *vcMulticast) decorate(deliverer communication.Deliverer) (communication.Deliverer, error) {
+	oldDeliverer := vcm.deliverer
+	vcm.deliverer = deliverer
+	return oldDeliverer, nil
+}
+
+func (vcm *vcMulticast) Deliver(message communication.Message) error {
+
+	logger := vcLog.WithFields(log.Fields{
+		"method":      "Deliver",
+		"multicastId": vcm.multicastId,
+	})
+
+	logger.WithFields(log.Fields{
+		"metadata": message.Metadata,
+		"payload":  message.Payload,
+	}).Debug("New message received")
+
+	timestampB64, ok := message.Metadata[fmt.Sprintf("%s:timestamp", vcHeader)]
+
+	if !ok {
+		return errors.New("vcMulticast: missing timestamp")
+	}
+
+	timestampBytes, err := base64.StdEncoding.DecodeString(timestampB64)
+
+	if err != nil {
+		return errors.New("vcMulticast: " + err.Error())
+	}
+
+	var timestampVector map[string]uint64
+
+	timestampBuffer := bytes.Buffer{}
+	timestampBuffer.Write(timestampBytes)
+	decoder := gob.NewDecoder(&timestampBuffer)
+	err = decoder.Decode(&timestampVector)
+
+	if err != nil {
+		return errors.New("vcMulticast: " + err.Error())
+
+	}
+
+	sourceId, ok := message.Metadata[fmt.Sprintf("%s:clientId", vcHeader)]
+
+	if !ok {
+		return errors.New("vcMulticast: missing client id")
+	}
+
+	member, ok := vcm.group[sourceId]
+
+	if !ok {
+		return errors.New("vcMulticast: unknown client id")
+	}
+
+	logger.WithField("clientId", sourceId).Debug("Putting message in the hold-back queue")
+
+	member.mu.Lock()
+	heap.Push(member.holdBackQueue, &priorityqueue.Item{Value: &waitingMessage{
+		message:       message,
+		timestamp:     timestampVector,
+		missingChecks: vcm.membersId,
+	}, Priority: timestampVector[sourceId]})
+	member.mu.Unlock()
+
+	for clientId, member := range vcm.group {
+
+		member.mu.Lock()
+
+		if clientId == vcm.clientId {
+			numItems := member.holdBackQueue.Len()
+			for i := 0; i < numItems; i++ {
+				element := heap.Pop(member.holdBackQueue).(*priorityqueue.Item)
+				if element.Priority == vcm.timestamp[vcm.clientId]+1 {
+
+					message := element.Value.(*waitingMessage).message
+					logger.WithFields(log.Fields{
+						"metadata": message.Metadata,
+						"payload":  message.Payload,
+					}).Debug("Delivering message")
+
+					err := vcm.deliverer.Deliver(message)
+					if err != nil {
+						return err
+					}
+					vcm.timestamp[vcm.clientId]++
+				} else {
+					heap.Push(member.holdBackQueue, element)
+					break
+				}
+			}
+		} else {
+			numItems := member.holdBackQueue.Len()
+			for i := 0; i < numItems; i++ {
+				element := heap.Pop(member.holdBackQueue).(*priorityqueue.Item)
+				waitingElem := element.Value.(*waitingMessage)
+
+				missing := make([]string, 0)
+
+				for _, clientId := range waitingElem.missingChecks {
+					if (clientId == member.clientId && waitingElem.timestamp[clientId] != vcm.timestamp[clientId]+1) || (clientId != member.clientId && waitingElem.timestamp[clientId] > vcm.timestamp[clientId]) {
+						missing = append(missing, clientId)
+					}
+				}
+
+				if len(missing) == 0 {
+					vcLog.WithFields(log.Fields{"clientId": member.clientId, "timestamp": waitingElem.timestamp, "message": waitingElem.message}).Debug("Delivering message")
+
+					logger.WithFields(log.Fields{
+						"metadata": waitingElem.message.Metadata,
+						"payload":  waitingElem.message.Payload,
+					}).Debug("Delivering message")
+
+					err := vcm.deliverer.Deliver(waitingElem.message)
+					if err != nil {
+						return err
+					}
+
+					vcm.timestamp[clientId]++
+
+				} else {
+					waitingElem.missingChecks = missing
+					heap.Push(member.holdBackQueue, element)
+					break
+				}
+			}
+		}
+
+		member.mu.Unlock()
+
+	}
+
+	logger.Debug("Message processed")
+
+	return nil
 }
 
 func (vcm *vcMulticast) Init(multicaster Multicast) error {
@@ -66,7 +261,7 @@ func (vcm *vcMulticast) Init(multicaster Multicast) error {
 		return err
 	}
 
-	mtId, err := multicaster.getMTId()
+	mtId, err := multicaster.getMulticastId()
 	if err != nil {
 		return err
 	}
@@ -98,7 +293,7 @@ func (vcm *vcMulticast) Init(multicaster Multicast) error {
 	}
 
 	vcm.clientId = clientId
-	vcm.mtId = mtId
+	vcm.multicastId = mtId
 	vcm.group = vcGroup
 	vcm.membersId = group
 	vcm.timestamp = timestamp
@@ -107,164 +302,6 @@ func (vcm *vcMulticast) Init(multicaster Multicast) error {
 
 	return nil
 
-}
-
-func (vcm *vcMulticast) SendToAll(message communication.Message) error {
-
-	timestampBytes := new(bytes.Buffer)
-
-	encoder := gob.NewEncoder(timestampBytes)
-
-	localTimestamp := atomic.AddUint64(&vcm.localTimestamp, 1)
-
-	timestampVector := make(map[string]uint64, len(vcm.timestamp))
-
-	for clientId, timestamp := range vcm.timestamp {
-		timestampVector[clientId] = timestamp
-	}
-
-	timestampVector[vcm.clientId] = localTimestamp
-
-	err := encoder.Encode(timestampVector)
-
-	if err != nil {
-		return err
-	}
-
-	timestampB64 := base64.StdEncoding.EncodeToString(timestampBytes.Bytes())
-
-	message.Metadata[fmt.Sprintf("%s:timestamp", vcHeader)] = timestampB64
-
-	message.Metadata[fmt.Sprintf("%s:clientId", vcHeader)] = vcm.clientId
-
-	vcLog.WithFields(log.Fields{"client_id": vcm.clientId, "timestamp": timestampVector, "message": message}).Debug("Multicasting message")
-
-	return vcm.multicaster.SendToAll(message)
-}
-
-func (vcm *vcMulticast) Close() error {
-	vcm.clientId = ""
-	vcm.mtId = ""
-	vcm.group = nil
-	vcm.membersId = nil
-	vcm.timestamp = nil
-	multicaster := vcm.multicaster
-
-	vcm.multicaster = nil
-	vcm.deliverer = nil
-
-	return multicaster.Close()
-}
-
-func (vcm *vcMulticast) Deliver(message communication.Message) error {
-
-	vcLog.WithField("message", message).Debug("New message received")
-
-	timestampB64, ok := message.Metadata[fmt.Sprintf("%s:timestamp", vcHeader)]
-
-	if !ok {
-		return errors.New("missingTimestamp")
-	}
-
-	timestampBytes, err := base64.StdEncoding.DecodeString(timestampB64)
-
-	if err != nil {
-		return err
-	}
-
-	var timestampVector map[string]uint64
-
-	timestampBuffer := bytes.Buffer{}
-	timestampBuffer.Write(timestampBytes)
-	decoder := gob.NewDecoder(&timestampBuffer)
-	err = decoder.Decode(&timestampVector)
-
-	if err != nil {
-		return err
-	}
-
-	sourceId, ok := message.Metadata[fmt.Sprintf("%s:clientId", vcHeader)]
-
-	if !ok {
-		return errors.New("clientIdNotFound")
-	}
-
-	member, ok := vcm.group[sourceId]
-
-	if !ok {
-		return errors.New("clientIdNotValid")
-	}
-
-	member.mu.Lock()
-	heap.Push(member.holdBackQueue, &priorityqueue.Item{Value: &waitingMessage{
-		message:       message,
-		timestamp:     timestampVector,
-		missingChecks: vcm.membersId,
-	}, Priority: timestampVector[sourceId]})
-	member.mu.Unlock()
-
-	for clientId, member := range vcm.group {
-
-		member.mu.Lock()
-
-		if clientId == vcm.clientId {
-			numItems := member.holdBackQueue.Len()
-			for i := 0; i < numItems; i++ {
-				element := heap.Pop(member.holdBackQueue).(*priorityqueue.Item)
-				if element.Priority == vcm.timestamp[vcm.clientId]+1 {
-
-					err := vcm.deliverer.Deliver(element.Value.(*waitingMessage).message)
-					if err != nil {
-						return err
-					}
-					vcm.timestamp[vcm.clientId]++
-				} else {
-					heap.Push(member.holdBackQueue, element)
-					break
-				}
-			}
-		} else {
-			numItems := member.holdBackQueue.Len()
-			for i := 0; i < numItems; i++ {
-				element := heap.Pop(member.holdBackQueue).(*priorityqueue.Item)
-				waitingElem := element.Value.(*waitingMessage)
-
-				missing := make([]string, 0)
-
-				for _, clientId := range waitingElem.missingChecks {
-					if (clientId == member.clientId && waitingElem.timestamp[clientId] != vcm.timestamp[clientId]+1) || (clientId != member.clientId && waitingElem.timestamp[clientId] > vcm.timestamp[clientId]) {
-						missing = append(missing, clientId)
-					}
-				}
-
-				if len(missing) == 0 {
-					vcLog.WithFields(log.Fields{"clientId": member.clientId, "timestamp": waitingElem.timestamp, "message": waitingElem.message}).Debug("Delivering message")
-					err := vcm.deliverer.Deliver(waitingElem.message)
-					if err != nil {
-						return err
-					}
-
-					vcm.timestamp[clientId]++
-
-				} else {
-					waitingElem.missingChecks = missing
-					heap.Push(member.holdBackQueue, element)
-					break
-				}
-			}
-		}
-
-		member.mu.Unlock()
-
-	}
-
-	return nil
-}
-
-func (vcm *vcMulticast) decorate(deliverer communication.Deliverer) (communication.Deliverer, error) {
-	oldDeliverer := vcm.deliverer
-	vcm.deliverer = deliverer
-	return oldDeliverer, nil
 }
 
 func DecorateVCMulticast(container *Container) (*Container, error) {

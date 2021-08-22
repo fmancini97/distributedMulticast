@@ -1,38 +1,69 @@
 package main
 
 import (
-	"bufio"
+	"flag"
 	"fmt"
-	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/communication"
+	log "github.com/sirupsen/logrus"
+	"gitlab.com/f_mancini/distribuitedOrderedMulticast/internal/utils"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/e2e"
-	"log"
-	"os"
 )
 
 func main() {
 	// Set up a connection to the server.
-	conn, err := e2e.ConnectWithDelay("localhost:8080", 5)
+
+	customFormatter := new(log.TextFormatter)
+	customFormatter.TimestampFormat = "2006-01-02 15:04:05"
+	customFormatter.FullTimestamp = true
+	log.SetFormatter(customFormatter)
+	logger := log.WithField("app_name", "e2e_client")
+
+	serverAddr := flag.String("serverAddr", ":8080", "e2e server to send messages")
+	streamId := flag.String("streamId", "e2eStream", "e2e stream identifier")
+
+	delay := flag.Uint("delay", 0, "delay for sending operations")
+	logLevelString := flag.String("logLevel", "info", fmt.Sprintf("log level %s", utils.GetLogLevels()))
+
+	flag.Parse()
+
+	logLevel, err := log.ParseLevel(*logLevelString)
 
 	if err != nil {
-		log.Fatalf("could not connect: %v", err)
+		logger.WithField("error", err).Warn("Error while parsing string")
+	} else {
+		log.SetLevel(logLevel)
 	}
 
-	reader := bufio.NewReader(os.Stdin)
-	header := make(map[string]string)
-	header["ID"] = "deadbeef"
-	for {
+	log.WithFields(log.Fields{
+		"logLevel":   *logLevelString,
+		"streamId":   *streamId,
+		"serverAddr": *serverAddr,
+		"delay":      *delay,
+	}).Debug("Starting application with the following parameters")
 
-		fmt.Print("Enter text: ")
-		text, _ := reader.ReadString('\n')
-		//fmt.Println(text)
+	logger.WithField("server", *serverAddr).Info("Connecting to e2e server")
 
-		err := conn.Send("deadbeef", communication.Message{
-			Metadata: header,
-			Payload:  []byte(text),
-		})
+	conn, err := e2e.ConnectWithDelay(*serverAddr, *delay)
+
+	if err != nil {
+		logger.WithField("error", err.Error()).Fatalf("Failed to connect")
+	}
+
+	errCh := make(chan error)
+	endCh := make(chan bool)
+
+	go func() {
+		err := utils.StdinSend(*streamId, conn, logger)
 		if err != nil {
-			log.Fatalf("could not send message: %v", err)
+			errCh <- err
 		}
+	}()
 
+	logger.Info("App started")
+
+	select {
+	case err := <-errCh:
+		logger.WithField("error", err.Error()).Fatal("Error while executing program")
+	case <-endCh:
 	}
+	logger.Info("Exiting")
 }

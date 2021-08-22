@@ -1,52 +1,74 @@
 package main
 
 import (
+	"flag"
+	"fmt"
+	log "github.com/sirupsen/logrus"
+	"gitlab.com/f_mancini/distribuitedOrderedMulticast/internal/deliverer"
+	"gitlab.com/f_mancini/distribuitedOrderedMulticast/internal/serverinitializer"
+	"gitlab.com/f_mancini/distribuitedOrderedMulticast/internal/utils"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/communication"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/e2e"
-	"google.golang.org/grpc"
-	"log"
-	"net"
 )
 
-type consumer struct {
-	ch chan communication.Message
-}
-
-func (c consumer) Deliver(message communication.Message) error {
-	log.Printf("Processing new message")
-	c.ch <- message
-	return nil
-}
-
 func main() {
-	lis, err := net.Listen("tcp", "localhost:8080")
+
+	customFormatter := new(log.TextFormatter)
+	customFormatter.TimestampFormat = "2006-01-02 15:04:05"
+	customFormatter.FullTimestamp = true
+	log.SetFormatter(customFormatter)
+	logger := log.WithField("app_name", "e2e_server")
+
+	serverPort := flag.Uint("serverAddr", 8080, "e2e server port")
+	streamId := flag.String("streamId", "e2eStream", "e2e stream identifier")
+
+	delay := flag.Uint("delay", 0, "delay for sending operations")
+	logLevelString := flag.String("logLevel", "info", fmt.Sprintf("log level %s", utils.GetLogLevels()))
+
+	flag.Parse()
+
+	logLevel, err := log.ParseLevel(*logLevelString)
+
 	if err != nil {
-		log.Fatalf("failed to listen: %v", err)
+		logger.WithField("error", err).Warn("Error while parsing string")
+	} else {
+		log.SetLevel(logLevel)
 	}
-	s := grpc.NewServer()
-	err = e2e.Register(s)
-	if err != nil {
-		log.Fatalf("failed to register: %v", err)
-	}
+
+	log.WithFields(log.Fields{
+		"logLevel":   *logLevelString,
+		"streamId":   *streamId,
+		"serverPort": *serverPort,
+		"delay":      *delay,
+	}).Debug("Starting application with the following parameters")
+
+	logger.WithField("serverPort", *serverPort).Info("Starting e2e server")
+
+	errCh := make(chan error)
 
 	go func() {
-		deliverer := consumer{make(chan communication.Message)}
-		err := e2e.AddDeliverer("deadbeef", deliverer)
+		err := serverinitializer.StartServer(fmt.Sprintf(":%d", *serverPort), e2e.Register)
 		if err != nil {
-			log.Fatalf("failed to add channel: %v", err)
-		}
-
-		for {
-			select {
-			case message := <-deliverer.ch:
-				log.Printf("New message: Header: %s - Payload: %s", message, string(message.Payload))
-			}
+			errCh <- err
 		}
 	}()
 
-	log.Printf("server listening at %v", lis.Addr())
-	if err := s.Serve(lis); err != nil {
-		log.Fatalf("failed to serve: %v", err)
+	messCh := make(chan communication.Message)
+
+	chanDeliverer := deliverer.NewChanDeliverer(messCh)
+
+	err = e2e.RegisterDeliverer(*streamId, chanDeliverer)
+	if err != nil {
+		logger.WithField("error", err.Error()).Fatal("Failed to add e2e channel")
 	}
 
+	for {
+		select {
+		case message := <-messCh:
+			logger.WithFields(log.Fields{"header": message.Metadata, "payload": message.Payload}).Info("New message")
+
+		case err := <-errCh:
+			logger.WithField("error", err.Error()).Fatal("Error while running server")
+		}
+	}
 }

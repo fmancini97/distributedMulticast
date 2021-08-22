@@ -31,17 +31,17 @@ func TestBmulticast_Init(t *testing.T) {
 		target := &E2EMember{
 			Id:      fmt.Sprintf("qwerty-%d", i),
 			Address: "127.0.0.1",
-			Sender:  localsender.New(deliverer.NewChanDeliverer(make(chan communication.Message)), 2000),
+			Sender:  localsender.NewWithDelay(deliverer.NewChanDeliverer(make(chan communication.Message)), 2000),
 		}
 
 		members = append(members, target)
 	}
-	bm := new(bmulticast)
+	bm := new(bMulticast)
 
 	bm.Init(mtId, clientId, smplDlv, members)
 
-	if mtId != bm.mtId {
-		t.Fatalf("Multicast ID mismatch - Expected: %s, Actual: %s", mtId, bm.mtId)
+	if mtId != bm.multicastId {
+		t.Fatalf("Multicast ID mismatch - Expected: %s, Actual: %s", mtId, bm.multicastId)
 	}
 
 	if clientId != bm.clientId {
@@ -81,7 +81,7 @@ func TestBmulticast_SendToAll(t *testing.T) {
 		target := &E2EMember{
 			Id:      fmt.Sprintf("qwerty%d", i),
 			Address: "127.0.0.1",
-			Sender:  localsender.New(deliverer.NewChanDeliverer(ch), 2000),
+			Sender:  localsender.NewWithDelay(deliverer.NewChanDeliverer(ch), 2000),
 		}
 
 		outputCh = append(outputCh, ch)
@@ -89,7 +89,7 @@ func TestBmulticast_SendToAll(t *testing.T) {
 		members = append(members, target)
 	}
 
-	bm := new(bmulticast)
+	bm := new(bMulticast)
 
 	bm.Init(mtId, clientId, smplDlv, members)
 
@@ -160,13 +160,13 @@ func TestBmulticast_Deliver(t *testing.T) {
 		target := &E2EMember{
 			Id:      fmt.Sprintf("qwerty%d", i),
 			Address: "127.0.0.1",
-			Sender:  localsender.New(deliverer.NewChanDeliverer(outputCh), 2000),
+			Sender:  localsender.NewWithDelay(deliverer.NewChanDeliverer(outputCh), 2000),
 		}
 
 		members = append(members, target)
 	}
 
-	bm := new(bmulticast)
+	bm := new(bMulticast)
 
 	bm.Init(mtId, clientId, smplDlv, members)
 
@@ -329,7 +329,7 @@ func initTestBMulticast(numMembers int, delay int) (map[string]*Container, map[s
 				member := &E2EMember{
 					Id:      cltId,
 					Address: cltId,
-					Sender:  localsender.New(lD, delay),
+					Sender:  localsender.NewWithDelay(lD, delay),
 				}
 				group = append(group, member)
 			}

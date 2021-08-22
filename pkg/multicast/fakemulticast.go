@@ -37,7 +37,7 @@ func (f *fakeMulticast) getGroup() ([]string, error) {
 	return f.group, nil
 }
 
-func (f *fakeMulticast) getMTId() (string, error) {
+func (f *fakeMulticast) getMulticastId() (string, error) {
 	return f.mtId, nil
 }
 

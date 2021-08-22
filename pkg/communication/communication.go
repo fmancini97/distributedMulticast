@@ -1,3 +1,4 @@
+// Package communication provides primitives and interfaces for communication between nodes
 package communication
 
 type Message struct {

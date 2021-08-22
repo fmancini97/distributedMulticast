@@ -56,8 +56,8 @@ func TestSCMulticast_Init(t *testing.T) {
 }
 
 func checkSCMulticast(scM *scMulticast, mtId string, clientId string, smplDlv communication.Deliverer, members []string) error {
-	if mtId != scM.mtId {
-		return errors.New(fmt.Sprintf("Multicast ID mismatch - Expected: %s, Actual: %s", mtId, scM.mtId))
+	if mtId != scM.multicastId {
+		return errors.New(fmt.Sprintf("Multicast ID mismatch - Expected: %s, Actual: %s", mtId, scM.multicastId))
 	}
 
 	if clientId != scM.clientId {
@@ -144,8 +144,8 @@ func checkScDataMessage(message communication.Message, expectedClientId string) 
 		return errors.New("missing messageType")
 	}
 
-	if scMessageType(messageType) != scData {
-		return errors.New(fmt.Sprintf("messageType mismatch - Expected: %s, Actual: %s", scData, messageType))
+	if scMessageTypeValue[messageType] != scData {
+		return errors.New(fmt.Sprintf("messageType mismatch - Expected: %s, Actual: %s", scMessageTypeName[scData], messageType))
 
 	}
 
@@ -225,7 +225,7 @@ func TestScMulticast_Deliver(t *testing.T) {
 
 	timestampString := strconv.FormatUint(uint64(scTimestamp), 10)
 
-	metadata[fmt.Sprintf("%s:messageType", scHeader)] = string(scData)
+	metadata[fmt.Sprintf("%s:messageType", scHeader)] = scMessageTypeName[scData]
 
 	metadata[fmt.Sprintf("%s:timestamp", scHeader)] = timestampString
 
@@ -270,7 +270,7 @@ func TestScMulticast_Deliver(t *testing.T) {
 
 			ackTimestampString := strconv.FormatUint(uint64(scTimestamp+1), 10)
 
-			metadata[fmt.Sprintf("%s:messageType", scHeader)] = string(scAck)
+			metadata[fmt.Sprintf("%s:messageType", scHeader)] = scMessageTypeName[scAck]
 
 			metadata[fmt.Sprintf("%s:timestamp", scHeader)] = ackTimestampString
 
@@ -329,8 +329,8 @@ func checkScAckMessage(message communication.Message, expectedClientId, expected
 		return errors.New("missing messageType")
 	}
 
-	if scMessageType(messageType) != scAck {
-		return errors.New(fmt.Sprintf("messageType mismatch - Expected: %s, Actual: %s", scData, messageType))
+	if scMessageTypeValue[messageType] != scAck {
+		return errors.New(fmt.Sprintf("messageType mismatch - Expected: %s, Actual: %s", scMessageTypeName[scData], messageType))
 
 	}
 

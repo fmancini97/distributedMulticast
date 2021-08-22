@@ -1,7 +1,8 @@
 package multicastregistry
 
 import (
-	registrygrpc "gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/multicastregistry/registryrpc"
+	log "github.com/sirupsen/logrus"
+	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/multicastregistry/registrygrpc"
 	"google.golang.org/grpc"
 )
 
@@ -14,7 +15,11 @@ var MulticastType = map[string]registrygrpc.MulticastType{
 	"TOCOMULTICAST":  registrygrpc.MulticastType_TOCOMULTICAST,
 }
 
-var MulticastTypes []string
+var (
+	MulticastTypes    []string
+	registryServerLog = log.WithField("app", "registryServer")
+	registryClientLog = log.WithField("app", "registryClient")
+)
 
 func init() {
 	MulticastTypes = make([]string, 0)

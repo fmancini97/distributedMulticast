@@ -20,8 +20,10 @@ func (s *server) Send(ctx context.Context, in *e2egrpc.Message) (*e2egrpc.Empty,
 
 	id := in.GetId()
 
-	logger := e2eLog.WithFields(log.Fields{"user_ip": source.Addr, "stream_id": id})
-	logger.WithField("message", in).Debug("New message")
+	logger := e2eLogServer.WithFields(log.Fields{"user_ip": source.Addr, "stream_id": id})
+	logger.WithFields(log.Fields{"metadata": in.Metadata, "payload": in.Metadata}).Debug("New message")
+
+	logger.Info("Processing new message")
 
 	dlvs.mu.RLock()
 	defer dlvs.mu.RUnlock()
@@ -29,7 +31,7 @@ func (s *server) Send(ctx context.Context, in *e2egrpc.Message) (*e2egrpc.Empty,
 	deliverer, exists := dlvs.streams[id]
 
 	if !exists {
-		log.Error("No stream available")
+		logger.Error("No stream available")
 		return nil, status.Errorf(codes.NotFound, "Stream %s does not exists", id)
 	}
 
@@ -39,7 +41,7 @@ func (s *server) Send(ctx context.Context, in *e2egrpc.Message) (*e2egrpc.Empty,
 		return nil, status.Errorf(codes.Internal, err.Error())
 	}
 
-	logger.Debug("Message processed")
+	logger.Info("Message processed")
 
 	return &e2egrpc.Empty{}, nil
 }

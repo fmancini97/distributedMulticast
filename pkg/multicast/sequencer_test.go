@@ -56,8 +56,8 @@ func TestSeqMulticast_Init(t *testing.T) {
 }
 
 func checkSequencer(seqm *seqMulticast, mtId string, clientId string, smplDlv *deliverer.ChanDeliverer, members []string) error {
-	if mtId != seqm.mtId {
-		return errors.New(fmt.Sprintf("Multicast ID mismatch - Expected: %s, Actual: %s", mtId, seqm.mtId))
+	if mtId != seqm.multicastId {
+		return errors.New(fmt.Sprintf("Multicast ID mismatch - Expected: %s, Actual: %s", mtId, seqm.multicastId))
 	}
 
 	if clientId != seqm.clientId {
@@ -231,8 +231,8 @@ func checkSeqDataMessage(message communication.Message) error {
 		return errors.New("missing messageId")
 	}
 
-	if seqMessageType(messageType) != seqData {
-		return errors.New(fmt.Sprintf("wrong message type - expected: %s, actual: %s", seqData, messageType))
+	if seqMessageTypeValue[messageType] != seqData {
+		return errors.New(fmt.Sprintf("wrong message type - expected: %s, actual: %s", seqMessageTypeName[seqData], messageType))
 	}
 
 	return nil
@@ -280,7 +280,7 @@ func TestSeqMulticast_Deliver(t *testing.T) {
 		messageId := fmt.Sprintf("%s:%d", seqm.group[rand.Intn(len(seqm.group))], i)
 
 		metadata[fmt.Sprintf("%s:messageId", seqHeader)] = messageId
-		metadata[fmt.Sprintf("%s:messageType", seqHeader)] = string(seqData)
+		metadata[fmt.Sprintf("%s:messageType", seqHeader)] = seqMessageTypeName[seqData]
 
 		b := make([]byte, 8)
 		binary.LittleEndian.PutUint64(b, i+1)
@@ -292,7 +292,7 @@ func TestSeqMulticast_Deliver(t *testing.T) {
 
 		orderMetadata := make(map[string]string)
 		orderMetadata[fmt.Sprintf("%s:messageId", seqHeader)] = messageId
-		orderMetadata[fmt.Sprintf("%s:messageType", seqHeader)] = string(seqOrder)
+		orderMetadata[fmt.Sprintf("%s:messageType", seqHeader)] = seqMessageTypeName[seqOrder]
 		orderMetadata[fmt.Sprintf("%s:seqOrder", seqHeader)] = strconv.FormatUint(i+1, 10)
 
 		messages = append(messages, communication.Message{
@@ -376,7 +376,7 @@ func TestSeqMulticastMaster_Deliver(t *testing.T) {
 			messageId := fmt.Sprintf("%s:%d", seqm.seqmt.group[rand.Intn(len(seqm.seqmt.group))], i)
 
 			metadata[fmt.Sprintf("%s:messageId", seqHeader)] = messageId
-			metadata[fmt.Sprintf("%s:messageType", seqHeader)] = string(seqData)
+			metadata[fmt.Sprintf("%s:messageType", seqHeader)] = seqMessageTypeName[seqData]
 
 			b := make([]byte, 8)
 			binary.LittleEndian.PutUint64(b, i+1)

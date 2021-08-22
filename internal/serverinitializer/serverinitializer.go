@@ -1,14 +1,11 @@
 package serverinitializer
 
 import (
-	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"net"
 )
 
-func InitializeServer(programAddress string, grpcServices ...func(grpc.ServiceRegistrar) error) error {
-	logger := log.WithField("address", programAddress)
-	logger.Debug("Initializing server")
+func StartServer(programAddress string, grpcServices ...func(grpc.ServiceRegistrar) error) error {
 
 	lis, err := net.Listen("tcp", programAddress)
 	if err != nil {
@@ -24,12 +21,9 @@ func InitializeServer(programAddress string, grpcServices ...func(grpc.ServiceRe
 
 	}
 
-	go func() {
-		if err := s.Serve(lis); err != nil {
-			logger.WithField("error", err).Fatalf("Failed to serve")
-		}
-	}()
+	if err = s.Serve(lis); err != nil {
+		return err
+	}
 
 	return nil
-
 }

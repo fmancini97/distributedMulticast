@@ -1,14 +1,16 @@
 package main
 
 import (
+	"flag"
+	"fmt"
 	log "github.com/sirupsen/logrus"
-	deliverer2 "gitlab.com/f_mancini/distribuitedOrderedMulticast/internal/deliverer"
+	"gitlab.com/f_mancini/distribuitedOrderedMulticast/internal/deliverer"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/internal/serverinitializer"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/internal/utils"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/communication"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/e2e"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/multicast"
-	"os"
+	"strings"
 )
 
 func main() {
@@ -17,62 +19,83 @@ func main() {
 	customFormatter.TimestampFormat = "2006-01-02 15:04:05"
 	customFormatter.FullTimestamp = true
 	log.SetFormatter(customFormatter)
-	log.SetLevel(log.DebugLevel)
+	logger := log.WithField("app_name", "example_fifomulticast")
 
-	logger := log.WithField("app", "example/fifomulticast")
+	nodePort := flag.Uint("nodePort", 8080, "multicast node port")
+	multicastId := flag.String("multicastId", "fifomulticastTopic", "multicast identifier")
+	memberAddrsString := flag.String("memberAddrs", ":8081,:8082", "addresses of the multicast group participants")
+	delay := flag.Uint("delay", 0, "delay for sending operations")
+	logLevelString := flag.String("logLevel", "info", fmt.Sprintf("log level %s", utils.GetLogLevels()))
 
-	if len(os.Args) < 3 {
-		logger.Warnf("Usage: %s programAddress mtId address1 address2...", os.Args[0])
-		return
-	}
+	flag.Parse()
 
-	// Taking client port
-	programAddress := os.Args[1]
-
-	err := serverinitializer.InitializeServer(programAddress, e2e.Register)
+	logLevel, err := log.ParseLevel(*logLevelString)
 
 	if err != nil {
-		logger.WithField("error", err).Fatalf("Failed to initialize server")
+		logger.WithField("error", err).Warn("Error while parsing string")
+	} else {
+		log.SetLevel(logLevel)
 	}
+
+	log.WithFields(log.Fields{
+		"logLevel":     *logLevelString,
+		"multicastId":  *multicastId,
+		"nodePort":     *nodePort,
+		"memeberAddrs": *memberAddrsString,
+		"delay":        *delay,
+	}).Debug("Starting application with the following parameters")
+
+	errCh := make(chan error)
+
+	nodeAddr := fmt.Sprintf(":%d", *nodePort)
+
+	go func() {
+		err := serverinitializer.StartServer(nodeAddr, e2e.Register)
+		if err != nil {
+			errCh <- err
+		}
+	}()
 
 	logger.Info("Initializing multicast...")
 
-	addresses := os.Args[3:]
+	memberAddrs := strings.Split(*memberAddrsString, ",")
 
-	connections, err := e2e.InitializeConnections(addresses, 2000)
+	connections, err := e2e.InitializeConnections(memberAddrs, *delay)
 
 	if err != nil {
-		logger.WithField("error", err).Fatalf("Failed to initialize connections")
+		logger.WithField("error", err.Error()).Fatalf("Failed to initialize connections")
 	}
 
 	msgCh := make(chan communication.Message)
 
-	deliverer := deliverer2.NewChanDeliverer(msgCh)
+	chanDlv := deliverer.NewChanDeliverer(msgCh)
 
-	mtId := os.Args[2]
-
-	multicaster, err := multicast.NewBMulticast(mtId, programAddress, deliverer, connections)
+	multicaster, err := multicast.NewFifoMulticast(*multicastId, nodeAddr, chanDlv, connections)
 
 	if err != nil {
-		logger.WithField("error", err).Fatalf("Error in creating multicaster")
+		logger.WithField("error", err.Error()).Fatalf("Error in creating multicaster")
 	}
 
-	multicaster, err = multicast.DecorateFifoMulticast(multicaster)
+	err = e2e.RegisterDeliverer(*multicastId, multicaster)
 
 	if err != nil {
-		logger.WithField("error", err).Fatalf("Error in creating multicaster")
-	}
-
-	err = e2e.AddDeliverer(mtId, multicaster)
-
-	if err != nil {
-		logger.WithField("error", err).Fatal("Failed to add deliverer")
+		logger.WithField("error", err.Error()).Fatal("Failed to add deliverer")
 	}
 
 	logger.Info("Ready to receive message")
 
 	go utils.PrintMessages(msgCh, logger)
 
-	utils.StdinSend(mtId, multicaster, logger)
+	go func() {
+		err := utils.StdinMulticast(*multicastId, multicaster, logger)
+		if err != nil {
+			errCh <- err
+		}
+	}()
 
+	err = <-errCh
+
+	if err != nil {
+		logger.WithField("error", err.Error()).Fatal("Failed while multicasting")
+	}
 }

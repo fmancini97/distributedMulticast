@@ -31,7 +31,11 @@ func (ls *Sender) Close() error {
 	return nil
 }
 
-func New(deliverer communication.Deliverer, delay int) *Sender {
+func New(deliverer communication.Deliverer) *Sender {
+	return NewWithDelay(deliverer, 0)
+}
+
+func NewWithDelay(deliverer communication.Deliverer, delay int) *Sender {
 	var r *rand.Rand
 	if delay > 0 {
 		r = rand.New(rand.NewSource(time.Now().UnixNano()))

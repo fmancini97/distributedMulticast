@@ -1,11 +1,11 @@
 syntax = "proto3";
 
-package registryrpc;
-option go_package = "gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/registry/registryrpc";
+package registrygrpc;
+option go_package = "gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/registry/registrygrpc";
 
 service Registry {
   rpc register (RegistrationInfo) returns (RegistrationAnswer) {}
-  rpc getStatus (GroupId) returns (GroupInfo) {}
+  rpc getStatus (MulticastId) returns (GroupInfo) {}
   rpc startGroup (RequestData) returns (GroupInfo) {}
   rpc closeGroup (RequestData) returns (GroupInfo) {}
   rpc ready (RequestData) returns (GroupInfo) {}
@@ -31,9 +31,9 @@ enum MulticastType {
 }
 
 message RegistrationInfo {
-  string groupId = 1;
+  string multicastId = 1;
   MulticastType multicastType = 2;
-  uint64 clientPort = 3;
+  uint32 clientPort = 3;
 
 }
 
@@ -43,19 +43,19 @@ message RegistrationAnswer {
 }
 
 message GroupInfo {
-  string groupId = 1;
+  string multicastId = 1;
   MulticastType multicastType = 2;
   Status status = 3;
   uint64 readyMembers = 4;
   map<string, MemberInfo>  members = 5;
 }
 
-message GroupId {
-  string groupId = 1;
+message MulticastId {
+  string multicastId = 1;
 }
 
 message RequestData {
-  string groupId = 1;
+  string multicastId = 1;
   string clientId = 2;
 }
 

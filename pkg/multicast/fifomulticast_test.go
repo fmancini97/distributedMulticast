@@ -56,8 +56,8 @@ func TestFifoMulticast_Init(t *testing.T) {
 }
 
 func checkFifoMulticast(fifom *fifoMulticast, mtId string, clientId string, smplDlv communication.Deliverer, members []string) error {
-	if mtId != fifom.mtId {
-		return errors.New(fmt.Sprintf("Multicast ID mismatch - Expected: %s, Actual: %s", mtId, fifom.mtId))
+	if mtId != fifom.multicastId {
+		return errors.New(fmt.Sprintf("Multicast ID mismatch - Expected: %s, Actual: %s", mtId, fifom.multicastId))
 	}
 
 	if clientId != fifom.clientId {

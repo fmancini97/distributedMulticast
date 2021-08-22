@@ -1,31 +1,39 @@
+// Package distribuitedmulticast provides functions to run a Http REST server running a multicast node
 package distribuitedmulticast
 
 import (
 	"context"
 	"errors"
 	"fmt"
-	logger "github.com/sirupsen/logrus"
+	"github.com/gin-gonic/gin"
+	log "github.com/sirupsen/logrus"
 	multicasttypemapper "gitlab.com/f_mancini/distribuitedOrderedMulticast/internal/multicastmapper"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/communication"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/e2e"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/multicast"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/multicastregistry"
-	registrygrpc "gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/multicastregistry/registryrpc"
+	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/multicastregistry/registrygrpc"
 	"sync"
 	"time"
 )
+
+const appHeader = "distributed-multicast"
 
 var (
 	multicastGroups map[string]*MulticastGroup
 	groupsMu        sync.RWMutex
 	registryClient  registrygrpc.RegistryClient
-	grpcPort        uint64
+	grpcPort        uint
+	delay           uint
+	dmLog           *log.Entry
 )
 
 func init() {
 	multicastGroups = make(map[string]*MulticastGroup)
+	dmLog = log.WithField("app", "distribute_multicast")
 }
 
+// MulticastGroup manages the metadata associated with a group in which the node is registered
 type MulticastGroup struct {
 	clientId    string
 	group       *MulticastGroupInfo
@@ -44,6 +52,13 @@ type MulticastGroupInfo struct {
 	Error            error             `json:"error"`
 }
 
+type RegistryGroupInfo struct {
+	MulticastId   string            `json:"multicast_id"`
+	MulticastType string            `json:"multicast_type"`
+	Status        string            `json:"status"`
+	Members       map[string]Member `json:"members"`
+}
+
 type Member struct {
 	MemberId string `json:"member_id"`
 	Address  string `json:"address"`
@@ -54,8 +69,7 @@ type GroupConfig struct {
 	MulticastType string `json:"multicast_type"`
 }
 
-const appHeader = "distributed-multicast"
-
+// AppCmd represents a command that can be used between multicast nodes
 type AppCmd int
 
 const (
@@ -105,14 +119,63 @@ func (gDlv *GroupDeliverer) Deliver(message communication.Message) error {
 	return nil
 }
 
-func Initialize(clientPort uint64, registryAddr string) error {
-	grpcPort = clientPort
+// Run initializes and executes the Rest HTTP server and the multicast node
+func Run(grpcP, restPort uint, registryAddr, relativePath string, numThreads, dl uint, debug bool) error {
+	grpcPort = grpcP
+	delay = dl
 	var err error
+
+	dmLog.WithFields(log.Fields{
+		"grpcPort":     grpcP,
+		"restPort":     restPort,
+		"registryAddr": registryAddr,
+		"relativePath": relativePath,
+		"numthreads":   numThreads,
+		"debug":        debug,
+	}).Debug("Starting distributed multicast server")
 
 	registryClient, err = multicastregistry.Connect(registryAddr)
 
-	return err
+	if err != nil {
+		return err
+	}
 
+	if debug {
+		gin.SetMode(gin.DebugMode)
+	} else {
+		gin.SetMode(gin.ReleaseMode)
+	}
+
+	err = multicast.ConfigPool(int(numThreads))
+	if err != nil {
+		return err
+	}
+
+	router := gin.Default()
+
+	routerGroup := router.Group(relativePath)
+
+	routerMap, err := GetRouterMethods(routerGroup)
+
+	for path, methods := range GetRestAPI() {
+		for methodType, method := range methods {
+			routerMethod, ok := routerMap[methodType]
+
+			if !ok {
+				return errors.New(fmt.Sprintf("missing routing method: %s", HttpMethodName[methodType]))
+			}
+
+			routerMethod(path, method)
+
+		}
+	}
+
+	err = router.Run(fmt.Sprintf(":%d", restPort))
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func closeMulticastGroup(multicastGroup *MulticastGroup) {
@@ -127,7 +190,7 @@ func closeMulticastGroup(multicastGroup *MulticastGroup) {
 
 	multicastGroup.groupMu.Unlock()
 
-	groupInfo, err := registryClient.CloseGroup(context.Background(), &registrygrpc.RequestData{GroupId: multicastGroup.group.MulticastId, ClientId: multicastGroup.clientId})
+	groupInfo, err := registryClient.CloseGroup(context.Background(), &registrygrpc.RequestData{MulticastId: multicastGroup.group.MulticastId, ClientId: multicastGroup.clientId})
 	if err != nil {
 		multicastGroup.groupMu.Lock()
 		multicastGroup.group.Error = err
@@ -173,6 +236,9 @@ func closeMulticastGroup(multicastGroup *MulticastGroup) {
 
 func initializeGroup(groupInfo *registrygrpc.GroupInfo, multicastGroup *MulticastGroup, isMaster bool) {
 
+	logger := dmLog.WithField("multicastId", multicastGroup.group.MulticastId)
+
+	logger.Info("Waiting for the group to be ready")
 	updateMulticastGroup(groupInfo, multicastGroup)
 	groupInfo, err := waitStatusChange(groupInfo, multicastGroup, registrygrpc.Status_OPENING)
 
@@ -181,10 +247,9 @@ func initializeGroup(groupInfo *registrygrpc.GroupInfo, multicastGroup *Multicas
 		multicastGroup.group.Error = err
 		multicastGroup.groupMu.Unlock()
 		return
-
 	}
 
-	logger.WithField("group", groupInfo).Info("Initializing Multicast")
+	logger.Debug("Group ready, initializing multicast")
 
 	err = initializeMulticaster(multicastGroup, isMaster)
 
@@ -195,7 +260,9 @@ func initializeGroup(groupInfo *registrygrpc.GroupInfo, multicastGroup *Multicas
 		return
 	}
 
-	groupInfo, err = registryClient.Ready(context.Background(), &registrygrpc.RequestData{GroupId: multicastGroup.group.MulticastId, ClientId: multicastGroup.clientId})
+	logger.Info("Notify the registry that the multicaster is ready")
+
+	groupInfo, err = registryClient.Ready(context.Background(), &registrygrpc.RequestData{MulticastId: multicastGroup.group.MulticastId, ClientId: multicastGroup.clientId})
 
 	if err != nil {
 		multicastGroup.groupMu.Lock()
@@ -203,6 +270,8 @@ func initializeGroup(groupInfo *registrygrpc.GroupInfo, multicastGroup *Multicas
 		multicastGroup.groupMu.Unlock()
 		return
 	}
+
+	logger.Info("Waiting for the other nodes")
 
 	updateMulticastGroup(groupInfo, multicastGroup)
 	groupInfo, err = waitStatusChange(groupInfo, multicastGroup, registrygrpc.Status_STARTING)
@@ -225,21 +294,27 @@ func initializeMulticaster(multicastGroup *MulticastGroup, isMaster bool) error 
 		return errors.New("unknown multicast type")
 	}
 
+	logger := dmLog.WithField("multicastId", multicastGroup.group.MulticastId)
+
 	dlv := &GroupDeliverer{group: multicastGroup}
 
 	e2eConnections := make([]*multicast.E2EMember, 0)
 
+	logger.Info("Connecting to multicast members")
+
 	for memberId, member := range multicastGroup.group.Members {
 		if memberId != multicastGroup.clientId {
-			logger.Infof("Connecting to: %s", member.Address)
+			logger.WithField("address", member.Address).Info("Connecting")
 
-			connection, err := e2e.InitializeConnection(member.MemberId, member.Address, 2000)
+			connection, err := e2e.InitializeConnection(member.MemberId, member.Address, delay)
 			if err != nil {
 				return err
 			}
 			e2eConnections = append(e2eConnections, connection)
 		}
 	}
+
+	logger.Info("Initializing multicaster")
 
 	multicaster, err := multicast.Initializers[mtType](multicastGroup.group.MulticastId, multicastGroup.clientId, dlv, e2eConnections)
 
@@ -248,32 +323,46 @@ func initializeMulticaster(multicastGroup *MulticastGroup, isMaster bool) error 
 
 	}
 
-	err = e2e.AddDeliverer(multicastGroup.group.MulticastId, multicaster)
+	logger.Info("Registering multicaster to e2e server")
+
+	err = e2e.RegisterDeliverer(multicastGroup.group.MulticastId, multicaster)
 	if err != nil {
 		return err
 	}
 
 	multicastGroup.multicaster = multicaster
+
+	logger.Info("Multicaster initialized")
+
 	return nil
 }
 
 func waitStatusChange(groupInfo *registrygrpc.GroupInfo, multicastGroup *MulticastGroup, status registrygrpc.Status) (*registrygrpc.GroupInfo, error) {
 	var err error
 
+	logger := dmLog.WithField("multicastId", multicastGroup.group.MulticastId)
+
 	for groupInfo.Status == status {
 		time.Sleep(time.Second * 5)
-		groupInfo, err = registryClient.GetStatus(context.Background(), &registrygrpc.GroupId{GroupId: groupInfo.GroupId})
+		groupInfo, err = registryClient.GetStatus(context.Background(), &registrygrpc.MulticastId{MulticastId: groupInfo.MulticastId})
 		if err != nil {
 			return nil, err
 		}
 
 		updateMulticastGroup(groupInfo, multicastGroup)
-
+		logger.WithFields(log.Fields{
+			"multicastId":   groupInfo.MulticastId,
+			"multicastType": groupInfo.MulticastType,
+			"readyMembers":  groupInfo.ReadyMembers,
+			"status":        registrygrpc.Status_name[int32(groupInfo.Status)],
+		}).Debug("New status")
 	}
 
 	if groupInfo.Status == registrygrpc.Status_CLOSED || groupInfo.Status == registrygrpc.Status_CLOSING {
 		return nil, errors.New("multicast group is closed")
 	}
+
+	logger.Info("Group status changed")
 
 	return groupInfo, nil
 }

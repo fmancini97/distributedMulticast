@@ -43,9 +43,9 @@ func Connect(address string) (*GrpcSender, error) {
 }
 
 func ConnectWithDelay(address string, delay uint) (*GrpcSender, error) {
-	logger := e2eLog.WithField("address", address)
+	logger := e2eLogClient.WithField("server_address", address)
 
-	logger.Debug("Connecting")
+	logger.WithField("delay", delay).Debug("Connecting")
 
 	conns.mu.Lock()
 	defer conns.mu.Unlock()
@@ -69,18 +69,20 @@ func ConnectWithDelay(address string, delay uint) (*GrpcSender, error) {
 
 		conns.connections[address] = gs
 	} else {
-		log.WithField("connection_info", gs).Debug("Connection already exists")
+		logger.WithField("connection_info", gs).Debug("Connection already exists")
 	}
 	gs.counter++
+
+	logger.Debug("Connected")
 
 	return &GrpcSender{gs}, nil
 }
 
 func (gs *GrpcSender) Send(streamId string, message communication.Message) error {
-	logger := e2eLog.WithField("stream_id", streamId)
-	logger.WithField("message", message).Debug("Sending message")
+	logger := e2eLogClient.WithField("streamId", streamId)
+	logger.WithFields(log.Fields{"metadata": message.Metadata, "payload": message.Payload}).Debug("Sending message")
 	if gs.meta == nil {
-		return errors.New("connectionClosed")
+		return errors.New("closed connection")
 	}
 
 	if gs.meta.delay > 0 {
@@ -88,6 +90,11 @@ func (gs *GrpcSender) Send(streamId string, message communication.Message) error
 	}
 
 	_, err := gs.meta.client.Send(context.Background(), &e2egrpc.Message{Id: streamId, Metadata: message.Metadata, Payload: message.Payload})
+
+	if err != nil {
+		logger.Debug("Message sent")
+	}
+
 	return err
 }
 
@@ -99,9 +106,10 @@ func (gs *GrpcSender) Close() error {
 		return errors.New("connectionClosed")
 	}
 
-	logger := e2eLog.WithField("connection", meta)
+	logger := e2eLogClient.WithField("server_address", meta.address)
 
-	logger.Debug("Closing")
+	logger.WithField("connection", meta).Debug("Closing connection")
+
 	conns.mu.Lock()
 	defer conns.mu.Unlock()
 
@@ -109,12 +117,15 @@ func (gs *GrpcSender) Close() error {
 
 	meta.counter--
 	if meta.counter == 0 {
-		logger.Debug()
+		logger.Debug("No more clients which use connection... deallocating")
 		delete(conns.connections, meta.address)
 		err := meta.conn.Close()
 		if err != nil {
 			return err
 		}
 	}
+
+	logger.Debug("Connection closed successfully")
+
 	return nil
 }

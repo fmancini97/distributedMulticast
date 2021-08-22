@@ -14,20 +14,34 @@ import (
 
 const seqHeader = "seq-multicast"
 
-type seqMessageType string
-
-const (
-	seqData  seqMessageType = "seqData"
-	seqOrder seqMessageType = "seqOrder"
-)
-
 var (
-	seqLog *log.Entry
+	seqLogMaster *log.Entry
+	seqLogWorker *log.Entry
 )
 
 func init() {
-	seqLog = log.WithField("layer", "sequencerMulticast")
+	seqLogMaster = log.WithField("layer", "seqMulticastMaster")
+	seqLogWorker = log.WithField("layer", "seqMulticastWorker")
 }
+
+type seqMessageType int
+
+const (
+	seqData seqMessageType = iota
+	seqOrder
+)
+
+var (
+	seqMessageTypeName = map[seqMessageType]string{
+		seqData:  "seqData",
+		seqOrder: "seqOrder",
+	}
+
+	seqMessageTypeValue = map[string]seqMessageType{
+		"seqData":  seqData,
+		"seqOrder": seqOrder,
+	}
+)
 
 type seqMtItem struct {
 	message        *communication.Message
@@ -35,27 +49,29 @@ type seqMtItem struct {
 }
 
 func (seqItem *seqMtItem) updateSeqMtItem(message communication.Message) error {
-	messageType, ok := message.Metadata[fmt.Sprintf("%s:messageType", seqHeader)]
+	messageTypeString, ok := message.Metadata[fmt.Sprintf("%s:messageType", seqHeader)]
 
 	if !ok {
 		return errors.New("missingMessageType")
 	}
 
-	if seqMessageType(messageType) != seqOrder && seqMessageType(messageType) != seqData {
-		return errors.New("invalidMessageType")
+	messageType, ok := seqMessageTypeValue[messageTypeString]
+
+	if !ok {
+		return errors.New("seqMulticast: unknown message type")
 	}
 
-	switch seqMessageType(messageType) {
+	switch messageType {
 	case seqOrder:
 		seqNumString, ok := message.Metadata[fmt.Sprintf("%s:seqOrder", seqHeader)]
 		if !ok {
-			return errors.New("missingSeqNumber")
+			return errors.New("seqMulticast: missing sequence number")
 		}
 
 		seqNum, err := strconv.ParseUint(seqNumString, 10, 64)
 
 		if err != nil {
-			return err
+			return errors.New("seqMulticast: " + err.Error())
 		}
 
 		seqItem.sequenceNumber = &seqNum
@@ -71,7 +87,7 @@ func (seqItem *seqMtItem) isReady() bool {
 }
 
 type seqMulticast struct {
-	mtId          string
+	multicastId   string
 	clientId      string
 	group         []string
 	localCounter  uint64
@@ -83,77 +99,32 @@ type seqMulticast struct {
 	multicaster   Multicast
 }
 
-func (seq *seqMulticast) getGroup() ([]string, error) {
-	return seq.group, nil
-}
-
-func (seq *seqMulticast) getMTId() (string, error) {
-	return seq.mtId, nil
-}
-
-func (seq *seqMulticast) getClientId() (string, error) {
-	return seq.clientId, nil
-}
-
-func (seq *seqMulticast) decorate(deliverer communication.Deliverer) (communication.Deliverer, error) {
-	oldDeliverer := seq.deliverer
-	seq.deliverer = deliverer
-	return oldDeliverer, nil
-}
-
-func (seq *seqMulticast) Init(multicaster Multicast) error {
-
-	clientId, err := multicaster.getClientId()
-	if err != nil {
-		return err
-	}
-
-	mtId, err := multicaster.getMTId()
-	if err != nil {
-		return err
-	}
-
-	group, err := multicaster.getGroup()
-	if err != nil {
-		return err
-	}
-
-	deliverer, err := multicaster.decorate(seq)
-
-	if err != nil {
-		return err
-	}
-
-	seq.mtId = mtId
-	seq.clientId = clientId
-	seq.localCounter = 0
-	seq.globalCounter = 0
-	seq.group = group
-	seq.holdBackQueue = priorityqueue.New(func(i interface{}, i2 interface{}) bool {
-		return i.(uint64) < i2.(uint64)
-	})
-	heap.Init(seq.holdBackQueue)
-	seq.waitingItems = make(map[string]*seqMtItem)
-	seq.deliverer = deliverer
-	seq.multicaster = multicaster
-
-	return nil
-
-}
-
 func (seq *seqMulticast) SendToAll(message communication.Message) error {
 	counter := atomic.AddUint64(&seq.localCounter, 1)
 	messageId := fmt.Sprintf("%s-%d", seq.clientId, counter)
 	message.Metadata[fmt.Sprintf("%s:messageId", seqHeader)] = messageId
-	message.Metadata[fmt.Sprintf("%s:messageType", seqHeader)] = string(seqData)
+	message.Metadata[fmt.Sprintf("%s:messageType", seqHeader)] = seqMessageTypeName[seqData]
 
-	seqLog.WithFields(log.Fields{"client_id": seq.clientId, "counter": counter, "message_id": messageId, "message": message, "method": "SendToAll"}).Debug("Multicasting message")
+	seqLogWorker.WithFields(log.Fields{
+		"method":      "SendToAll",
+		"multicastId": seq.multicastId,
+		"clientId":    seq.clientId,
+		"counter":     counter,
+		"messageId":   messageId,
+		"metadata":    message.Metadata,
+		"payload":     message.Payload,
+	}).Debug("Multicasting message")
 
 	return seq.multicaster.SendToAll(message)
 }
 
 func (seq *seqMulticast) Close() error {
-	seq.mtId = ""
+	seqLogWorker.WithFields(log.Fields{
+		"method":      "Close",
+		"multicastId": seq.multicastId,
+	}).Debug("Closing multicaster")
+
+	seq.multicastId = ""
 	seq.clientId = ""
 	seq.localCounter = 0
 	seq.globalCounter = 0
@@ -168,19 +139,40 @@ func (seq *seqMulticast) Close() error {
 	return multicaster.Close()
 }
 
+func (seq *seqMulticast) getMulticastId() (string, error) {
+	return seq.multicastId, nil
+}
+
+func (seq *seqMulticast) getClientId() (string, error) {
+	return seq.clientId, nil
+}
+
+func (seq *seqMulticast) getGroup() ([]string, error) {
+	return seq.group, nil
+}
+
+func (seq *seqMulticast) decorate(deliverer communication.Deliverer) (communication.Deliverer, error) {
+	oldDeliverer := seq.deliverer
+	seq.deliverer = deliverer
+	return oldDeliverer, nil
+}
+
 func (seq *seqMulticast) Deliver(message communication.Message) error {
-
-	logger := seqLog.WithField("method", "Deliver")
-
 	messageId, ok := message.Metadata[fmt.Sprintf("%s:messageId", seqHeader)]
 
 	if !ok {
-		logger.WithField("message", message).Error("Missing messageId")
 		return errors.New("missingMessageId")
 	}
 
-	logger = logger.WithField("messageId", messageId)
-	logger.WithField("message", message).Debug("New message")
+	logger := seqLogWorker.WithFields(log.Fields{
+		"method":      "Deliver",
+		"multicastId": seq.multicastId,
+		"messageId":   messageId})
+
+	logger.WithFields(log.Fields{
+		"metadata": message.Metadata,
+		"payload":  message.Payload,
+	}).Debug("New message")
 
 	seq.mu.Lock()
 	defer seq.mu.Unlock()
@@ -203,7 +195,7 @@ func (seq *seqMulticast) Deliver(message communication.Message) error {
 		return nil
 	}
 
-	logger.Debug("Delivering messages")
+	logger.Debug("Putting message in the hold-back queue")
 
 	delete(seq.waitingItems, messageId)
 
@@ -218,7 +210,12 @@ func (seq *seqMulticast) Deliver(message communication.Message) error {
 		element := heap.Pop(seq.holdBackQueue).(*priorityqueue.Item)
 		if element.Priority == seq.globalCounter+1 {
 			message = element.Value.(communication.Message)
-			logger.WithFields(log.Fields{"message": message, "counter": element.Priority}).Debug("Delivering message")
+			logger.WithFields(log.Fields{
+				"counter":  element.Priority,
+				"metadata": message.Metadata,
+				"payload":  message.Payload,
+			}).Debug("Delivering message")
+
 			err = seq.deliverer.Deliver(message)
 			if err != nil {
 				return err
@@ -231,7 +228,49 @@ func (seq *seqMulticast) Deliver(message communication.Message) error {
 
 	}
 
+	logger.Debug("Message processed")
+
 	return nil
+}
+
+func (seq *seqMulticast) Init(multicaster Multicast) error {
+
+	clientId, err := multicaster.getClientId()
+	if err != nil {
+		return err
+	}
+
+	mtId, err := multicaster.getMulticastId()
+	if err != nil {
+		return err
+	}
+
+	group, err := multicaster.getGroup()
+	if err != nil {
+		return err
+	}
+
+	deliverer, err := multicaster.decorate(seq)
+
+	if err != nil {
+		return err
+	}
+
+	seq.multicastId = mtId
+	seq.clientId = clientId
+	seq.localCounter = 0
+	seq.globalCounter = 0
+	seq.group = group
+	seq.holdBackQueue = priorityqueue.New(func(i interface{}, i2 interface{}) bool {
+		return i.(uint64) < i2.(uint64)
+	})
+	heap.Init(seq.holdBackQueue)
+	seq.waitingItems = make(map[string]*seqMtItem)
+	seq.deliverer = deliverer
+	seq.multicaster = multicaster
+
+	return nil
+
 }
 
 type seqMulticastMaster struct {
@@ -239,16 +278,47 @@ type seqMulticastMaster struct {
 	seqmt         *seqMulticast
 }
 
-func (seq *seqMulticastMaster) getGroup() ([]string, error) {
-	return seq.seqmt.getGroup()
+func (seq *seqMulticastMaster) SendToAll(message communication.Message) error {
+
+	multicastId, _ := seq.getMulticastId()
+	clientId, _ := seq.getClientId()
+
+	seqLogMaster.WithFields(log.Fields{
+		"method":      "SendToAll",
+		"multicastId": multicastId,
+		"clientId":    clientId,
+		"metadata":    message.Metadata,
+		"payload":     message.Payload,
+	}).Debug("Multicasting message")
+
+	return seq.seqmt.SendToAll(message)
 }
 
-func (seq *seqMulticastMaster) getMTId() (string, error) {
-	return seq.seqmt.getMTId()
+func (seq *seqMulticastMaster) Close() error {
+
+	multicastId, _ := seq.getMulticastId()
+
+	seqLogMaster.WithFields(log.Fields{
+		"method":      "Close",
+		"multicastId": multicastId,
+	}).Debug("Closing multicaster")
+
+	seq.globalCounter = 0
+	seqWorker := seq.seqmt
+	seq.seqmt = nil
+	return seqWorker.Close()
+}
+
+func (seq *seqMulticastMaster) getMulticastId() (string, error) {
+	return seq.seqmt.getMulticastId()
 }
 
 func (seq *seqMulticastMaster) getClientId() (string, error) {
 	return seq.seqmt.getClientId()
+}
+
+func (seq *seqMulticastMaster) getGroup() ([]string, error) {
+	return seq.seqmt.getGroup()
 }
 
 func (seq *seqMulticastMaster) decorate(deliverer communication.Deliverer) (communication.Deliverer, error) {
@@ -256,7 +326,6 @@ func (seq *seqMulticastMaster) decorate(deliverer communication.Deliverer) (comm
 }
 
 func (seq *seqMulticastMaster) Init(multicaster Multicast) error {
-
 	seqWork := new(seqMulticast)
 	err := seqWork.Init(multicaster)
 	if err != nil {
@@ -274,53 +343,53 @@ func (seq *seqMulticastMaster) Init(multicaster Multicast) error {
 
 }
 
-func (seq *seqMulticastMaster) SendToAll(message communication.Message) error {
-	return seq.seqmt.SendToAll(message)
-}
-
-func (seq *seqMulticastMaster) Close() error {
-	seq.globalCounter = 0
-	seqWorker := seq.seqmt
-	seq.seqmt = nil
-	return seqWorker.Close()
-}
-
 func (seq *seqMulticastMaster) Deliver(message communication.Message) error {
-
-	logger := seqLog.WithField("method", "deliver")
 
 	messageId, ok := message.Metadata[fmt.Sprintf("%s:messageId", seqHeader)]
 
 	if !ok {
-		logger.WithField("message", message).Error("Missing messageId")
-		return errors.New("missingMessageId")
+		return errors.New("seqMulticast: missing message id")
 	}
 
-	messageType, ok := message.Metadata[fmt.Sprintf("%s:messageType", seqHeader)]
+	multicastId, _ := seq.getMulticastId()
+
+	logger := seqLogMaster.WithFields(log.Fields{
+		"method":      "Deliver",
+		"multicastId": multicastId,
+		"messageId":   messageId,
+	})
+
+	messageTypeString, ok := message.Metadata[fmt.Sprintf("%s:messageType", seqHeader)]
 
 	if !ok {
-		logger.WithField("message", message).Error("Missing messageType")
-		return errors.New("missingMessageType")
+		return errors.New("seqMulticast: missing message type")
 	}
 
-	if seqMessageType(messageType) != seqOrder && seqMessageType(messageType) != seqData {
-		logger.WithField("message", message).Error("Invalid messageType")
-		return errors.New("invalidMessageType")
+	messageType, ok := seqMessageTypeValue[messageTypeString]
+
+	if !ok {
+		return errors.New("seqMulticast: unknown message type")
 	}
 
-	if seqMessageType(messageType) == seqData {
+	if messageType == seqData {
+
+		logger.Debug("Processing data message")
+
 		metadata := make(map[string]string)
 		metadata[fmt.Sprintf("%s:messageId", seqHeader)] = messageId
-		metadata[fmt.Sprintf("%s:messageType", seqHeader)] = string(seqOrder)
+		metadata[fmt.Sprintf("%s:messageType", seqHeader)] = seqMessageTypeName[seqOrder]
 		metadata[fmt.Sprintf("%s:seqOrder", seqHeader)] = strconv.FormatUint(atomic.AddUint64(&seq.globalCounter, 1), 10)
-		logger.WithField("seqOrder", metadata).Debug("Sending seqOrder message")
 		go func() {
+			logger.WithField("seqOrder", metadata).Debug("Sending order message")
+
 			err := seq.seqmt.multicaster.SendToAll(communication.Message{Metadata: metadata})
 			if err != nil {
-				logger.WithField("error", err).Error("Error while sending seqOrder message")
+				logger.WithField("error", err).Error("Error while sending order message")
 			}
 		}()
 	}
+
+	logger.Debug("Message processed")
 
 	return seq.seqmt.Deliver(message)
 }

@@ -1,16 +1,16 @@
 package main
 
 import (
+	"flag"
 	"fmt"
-	"github.com/gin-gonic/gin"
 	log "github.com/sirupsen/logrus"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/internal/serverinitializer"
+	"gitlab.com/f_mancini/distribuitedOrderedMulticast/internal/utils"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/distribuitedmulticast"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/e2e"
 	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/multicastregistry"
 	"google.golang.org/grpc"
-	"os"
-	"strconv"
+	"sync"
 )
 
 func main() {
@@ -21,77 +21,91 @@ func main() {
 	log.SetFormatter(customFormatter)
 	logger := log.WithField("app_name", "distributed_multicast")
 
-	if len(os.Args) < 3 {
-		logger.Infof("Usage: %s restPort grpcPort [registryAddr]", os.Args[0])
-		return
-	}
+	restPort := flag.Uint("restPort", 80, "port number of the rest server")
+	grpcPort := flag.Uint("grpcPort", 90, "port number of the grpc server")
+	appMulticast := flag.Bool("appMulticast", false, "start distributed multicast node")
+	registryMulticast := flag.Bool("registryMulticast", false, "start multicast registry")
+	registryAddr := flag.String("registryAddr", ":90", "multicast registry address")
+	restPath := flag.String("restPath", "/api/v1", "path of the rest api")
+	numThreads := flag.Uint("numThreads", 5, "number of threads used to multicast messages")
+	delay := flag.Uint("delay", 0, "delay for sending operations")
+	logLevelString := flag.String("logLevel", "info", fmt.Sprintf("log level %s", utils.GetLogLevels()))
+	debug := flag.Bool("debugMode", false, "execute distributed multicast node in debug mode")
 
-	// Parsing parameters
+	flag.Parse()
 
-	restPortString := os.Args[1]
-
-	restPort, err := strconv.ParseUint(restPortString, 10, 32)
-
-	if err != nil {
-		logger.WithField("error", err).Fatal("Error while parsing restPort")
-	}
-
-	grpcPortString := os.Args[2]
-
-	grpcPort, err := strconv.ParseUint(grpcPortString, 10, 32)
+	logLevel, err := log.ParseLevel(*logLevelString)
 
 	if err != nil {
-		logger.WithField("error", err).Fatal("Error while parsing grpcPort")
+		logger.WithField("error", err).Warn("Error while parsing string")
+	} else {
+		log.SetLevel(logLevel)
 	}
 
-	services := []func(registrar grpc.ServiceRegistrar) error{e2e.Register}
-
-	var registryAddr string
+	log.WithFields(log.Fields{
+		"restPort":          *restPort,
+		"grpcPort":          *grpcPort,
+		"appMulticast":      *appMulticast,
+		"registryMulticast": *registryMulticast,
+		"registryAddr":      *registryAddr,
+		"restPath":          *restPath,
+		"logLevel":          *logLevelString,
+		"debug":             *debug,
+	}).Debug("Starting application with the following parameters")
 
 	logger.Info("Initializing gRPC server")
 
-	if len(os.Args) == 4 {
-		registryAddr = os.Args[3]
-	} else {
-		logger.Info("Initializing multicast registry")
+	services := make([]func(registrar grpc.ServiceRegistrar) error, 0)
+
+	if *appMulticast {
+		logger.Debug("Adding e2e service to gRPC server")
+		services = append(services, e2e.Register)
+	}
+
+	if *registryMulticast {
+		logger.Debug("Adding multicast registry to gRPC server")
 		services = append(services, multicastregistry.Register)
-		registryAddr = fmt.Sprintf(":%d", grpcPort)
 	}
 
-	err = serverinitializer.InitializeServer(fmt.Sprintf(":%d", grpcPort), services...)
-	if err != nil {
-		logger.WithField("error", err).Fatal("Error while initializing server")
-	}
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	errCh := make(chan error)
 
-	logger.Info("Connecting to Multicast registry")
-
-	err = distribuitedmulticast.Initialize(grpcPort, registryAddr)
-
-	if err != nil {
-		logger.WithField("error", err).Fatal("Error while connecting to registry")
-	}
-
-	router := gin.Default()
-
-	routerGroup := router.Group("/api/v1")
-
-	routerMap, err := distribuitedmulticast.GetRouterMethods(routerGroup)
-
-	for path, methods := range distribuitedmulticast.GetRestAPI() {
-		for methodType, method := range methods {
-			routerMethod, ok := routerMap[methodType]
-
-			if !ok {
-				logger.Fatalf("Missing routing method: %s", distribuitedmulticast.HttpMethodName[methodType])
-			}
-
-			routerMethod(path, method)
-
+	go func() {
+		err := serverinitializer.StartServer(fmt.Sprintf(":%d", *grpcPort), services...)
+		if err != nil {
+			errCh <- err
 		}
+		wg.Done()
+	}()
+
+	if *appMulticast {
+
+		logger.Info("Starting distributed multicast node")
+
+		wg.Add(1)
+		go func() {
+			err := distribuitedmulticast.Run(*grpcPort, *restPort, *registryAddr, *restPath, *numThreads, *delay, *debug)
+			if err != nil {
+				errCh <- err
+			}
+			wg.Done()
+		}()
 	}
 
-	err = router.Run(fmt.Sprintf(":%d", restPort))
-	if err != nil {
-		log.WithField("error", err).Fatal("Error while starting http server")
+	wgChan := make(chan bool)
+
+	go func() {
+		wg.Wait()
+		wgChan <- true
+	}()
+
+	logger.Info("App started")
+
+	select {
+	case err := <-errCh:
+		logger.WithField("error", err.Error()).Fatal("Error while executing program")
+	case <-wgChan:
 	}
+
 }
