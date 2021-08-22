@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	log "github.com/sirupsen/logrus"
-	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/multicastregistry/registrygrpc"
+	"gitlab.com/f_mancini/distributedMulticast/pkg/multicastregistry/registrygrpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"

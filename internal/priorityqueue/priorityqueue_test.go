@@ -2,7 +2,7 @@ package priorityqueue
 
 import (
 	"container/heap"
-	"gitlab.com/f_mancini/distribuitedOrderedMulticast/internal/randstring"
+	"gitlab.com/f_mancini/distributedMulticast/internal/randstring"
 	"math/rand"
 	"testing"
 	"time"

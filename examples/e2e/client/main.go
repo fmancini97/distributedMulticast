@@ -4,8 +4,8 @@ import (
 	"flag"
 	"fmt"
 	log "github.com/sirupsen/logrus"
-	"gitlab.com/f_mancini/distribuitedOrderedMulticast/internal/utils"
-	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/e2e"
+	"gitlab.com/f_mancini/distributedMulticast/internal/utils"
+	"gitlab.com/f_mancini/distributedMulticast/pkg/e2e"
 )
 
 func main() {

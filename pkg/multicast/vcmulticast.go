@@ -8,8 +8,8 @@ import (
 	"errors"
 	"fmt"
 	log "github.com/sirupsen/logrus"
-	"gitlab.com/f_mancini/distribuitedOrderedMulticast/internal/priorityqueue"
-	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/communication"
+	"gitlab.com/f_mancini/distributedMulticast/internal/priorityqueue"
+	"gitlab.com/f_mancini/distributedMulticast/pkg/communication"
 	"sync"
 	"sync/atomic"
 )

@@ -2,7 +2,7 @@ package multicastregistry
 
 import (
 	log "github.com/sirupsen/logrus"
-	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/multicastregistry/registrygrpc"
+	"gitlab.com/f_mancini/distributedMulticast/pkg/multicastregistry/registrygrpc"
 	"google.golang.org/grpc"
 )
 

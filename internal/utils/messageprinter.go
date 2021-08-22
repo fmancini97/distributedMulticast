@@ -2,7 +2,7 @@ package utils
 
 import (
 	log "github.com/sirupsen/logrus"
-	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/communication"
+	"gitlab.com/f_mancini/distributedMulticast/pkg/communication"
 )
 
 func PrintMessages(msgCh chan communication.Message, logger *log.Entry) {

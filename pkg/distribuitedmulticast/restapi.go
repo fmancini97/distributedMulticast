@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"github.com/gin-gonic/gin"
 	log "github.com/sirupsen/logrus"
-	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/communication"
-	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/multicastregistry"
-	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/multicastregistry/registrygrpc"
+	"gitlab.com/f_mancini/distributedMulticast/pkg/communication"
+	"gitlab.com/f_mancini/distributedMulticast/pkg/multicastregistry"
+	"gitlab.com/f_mancini/distributedMulticast/pkg/multicastregistry/registrygrpc"
 	"io"
 	"net/http"
 	"strconv"
@@ -199,7 +199,7 @@ func CreateGroup(ctx *gin.Context) {
 
 	if !ok {
 		logger.WithField("multicastType", multicastType).Warn("MulticastType not supported")
-		ctx.IndentedJSON(http.StatusBadRequest, gin.H{"error": "MulticastType not supported", "supported": multicastregistry.MulticastTypes})
+		ctx.IndentedJSON(http.StatusBadRequest, gin.H{"error": "multicast_type not supported", "supported": multicastregistry.MulticastTypes})
 		return
 	}
 

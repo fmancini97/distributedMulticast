@@ -2,7 +2,7 @@ package localsender
 
 import (
 	"errors"
-	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/communication"
+	"gitlab.com/f_mancini/distributedMulticast/pkg/communication"
 	"math/rand"
 	"time"
 )

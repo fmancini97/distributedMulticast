@@ -1,7 +1,7 @@
 package multicast
 
 import (
-	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/communication"
+	"gitlab.com/f_mancini/distributedMulticast/pkg/communication"
 )
 
 type fakeMulticast struct {

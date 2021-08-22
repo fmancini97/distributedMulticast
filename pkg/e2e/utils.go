@@ -3,9 +3,9 @@ package e2e
 import (
 	"errors"
 	log "github.com/sirupsen/logrus"
-	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/communication"
-	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/e2e/e2egrpc"
-	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/multicast"
+	"gitlab.com/f_mancini/distributedMulticast/pkg/communication"
+	"gitlab.com/f_mancini/distributedMulticast/pkg/e2e/e2egrpc"
+	"gitlab.com/f_mancini/distributedMulticast/pkg/multicast"
 	"google.golang.org/grpc"
 	"sync"
 )

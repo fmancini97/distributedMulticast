@@ -3,7 +3,7 @@ package multicast
 import (
 	"container/list"
 	"errors"
-	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/communication"
+	"gitlab.com/f_mancini/distributedMulticast/pkg/communication"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"sync"
@@ -29,7 +29,7 @@ type sendResult struct {
 	err     error
 }
 
-const numThreads = 5
+const numThreads = 1
 
 var (
 	pool multicastPool

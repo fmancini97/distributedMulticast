@@ -2,7 +2,7 @@ package multicast
 
 import (
 	"errors"
-	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/communication"
+	"gitlab.com/f_mancini/distributedMulticast/pkg/communication"
 )
 
 type Container struct {

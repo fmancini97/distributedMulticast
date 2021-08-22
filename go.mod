@@ -1,4 +1,4 @@
-module gitlab.com/f_mancini/distribuitedOrderedMulticast
+module gitlab.com/f_mancini/distributedMulticast
 
 go 1.16
 

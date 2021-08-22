@@ -4,11 +4,11 @@ import (
 	"flag"
 	"fmt"
 	log "github.com/sirupsen/logrus"
-	"gitlab.com/f_mancini/distribuitedOrderedMulticast/internal/deliverer"
-	"gitlab.com/f_mancini/distribuitedOrderedMulticast/internal/serverinitializer"
-	"gitlab.com/f_mancini/distribuitedOrderedMulticast/internal/utils"
-	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/communication"
-	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/e2e"
+	"gitlab.com/f_mancini/distributedMulticast/internal/deliverer"
+	"gitlab.com/f_mancini/distributedMulticast/internal/serverinitializer"
+	"gitlab.com/f_mancini/distributedMulticast/internal/utils"
+	"gitlab.com/f_mancini/distributedMulticast/pkg/communication"
+	"gitlab.com/f_mancini/distributedMulticast/pkg/e2e"
 )
 
 func main() {

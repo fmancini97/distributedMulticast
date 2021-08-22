@@ -1,6 +1,6 @@
 package deliverer
 
-import "gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/communication"
+import "gitlab.com/f_mancini/distributedMulticast/pkg/communication"
 
 type ChanDeliverer struct {
 	ch chan communication.Message

@@ -1,8 +1,8 @@
 package multicasttypemapper
 
 import (
-	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/multicast"
-	"gitlab.com/f_mancini/distribuitedOrderedMulticast/pkg/multicastregistry/registrygrpc"
+	"gitlab.com/f_mancini/distributedMulticast/pkg/multicast"
+	"gitlab.com/f_mancini/distributedMulticast/pkg/multicastregistry/registrygrpc"
 )
 
 var Type = map[registrygrpc.MulticastType]map[bool]multicast.Type{
