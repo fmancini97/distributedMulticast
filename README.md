@@ -61,7 +61,7 @@ The container can be configured through the following environment variables:
 - ```REGISTRY=``` start multicast registry
 - ```DEBUG=``` execute distributed multicast node in debug mode
 - ```DELAY=uint``` delay for sending operations (ms)
-- ```-GRPC_PORT=uint``` port number of the grpc server (default 90)
+- ```GRPC_PORT=uint``` port number of the grpc server (default 90)
 - ```LOG_LEVEL=string``` log level: ```panic```, ```fatal```, ```error```, ```warning```, ```info```, ```debug```,
   ```trace``` (default "info")
 - ```NUM_THREADS=uint``` number of threads used to multicast messages (default 1)
