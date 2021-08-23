@@ -32,6 +32,7 @@ type senderMetadata struct {
 	counter int
 	delay   uint // Millisecond
 	rnd     *rand.Rand
+	rndMu   sync.Mutex
 }
 
 type GrpcSender struct {
@@ -86,7 +87,11 @@ func (gs *GrpcSender) Send(streamId string, message communication.Message) error
 	}
 
 	if gs.meta.delay > 0 {
-		time.Sleep(time.Duration(gs.meta.rnd.Intn(int(gs.meta.delay))) * time.Millisecond)
+		gs.meta.rndMu.Lock()
+		delayDuration := time.Duration(gs.meta.rnd.Intn(int(gs.meta.delay)))
+		gs.meta.rndMu.Unlock()
+
+		time.Sleep(delayDuration * time.Millisecond)
 	}
 
 	_, err := gs.meta.client.Send(context.Background(), &e2egrpc.Message{Id: streamId, Metadata: message.Metadata, Payload: message.Payload})

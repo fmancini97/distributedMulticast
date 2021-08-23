@@ -30,7 +30,7 @@ func main() {
 	appMulticast := flag.Bool("appMulticast", false, "start distributed multicast node")
 	registryMulticast := flag.Bool("registryMulticast", false, "start multicast registry")
 	registryAddr := flag.String("registryAddr", ":90", "multicast registry address")
-	numThreads := flag.Uint("numThreads", 5, "number of threads used to multicast messages")
+	numThreads := flag.Uint("numThreads", 1, "number of threads used to multicast messages")
 	multicastId := flag.String("multicastId", "multicastTopic", "identifier of the multicast group")
 	delay := flag.Uint("delay", 0, "delay for sending operations")
 	startMulticastGroup := flag.Bool("startMulticastGroup", false, "start multicast group after registering")
@@ -48,11 +48,16 @@ func main() {
 	}
 
 	log.WithFields(log.Fields{
-		"grpcPort":          *grpcPort,
-		"appMulticast":      *appMulticast,
-		"registryMulticast": *registryMulticast,
-		"registryAddr":      *registryAddr,
-		"logLevel":          *logLevelString,
+		"grpcPort":            *grpcPort,
+		"appMulticast":        *appMulticast,
+		"registryMulticast":   *registryMulticast,
+		"registryAddr":        *registryAddr,
+		"logLevel":            *logLevelString,
+		"numThreads":          *numThreads,
+		"multicastId":         *multicastId,
+		"delay":               *delay,
+		"startMulticastGroup": *startMulticastGroup,
+		"multicastType":       *multicastTypeString,
 	}).Debug("Starting application with the following parameters")
 
 	multicastType, ok := multicastregistry.MulticastType[*multicastTypeString]

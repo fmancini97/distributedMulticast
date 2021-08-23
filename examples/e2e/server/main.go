@@ -19,10 +19,9 @@ func main() {
 	log.SetFormatter(customFormatter)
 	logger := log.WithField("app_name", "e2e_server")
 
-	serverPort := flag.Uint("serverAddr", 8080, "e2e server port")
+	serverPort := flag.Uint("serverPort", 8080, "e2e server port")
 	streamId := flag.String("streamId", "e2eStream", "e2e stream identifier")
 
-	delay := flag.Uint("delay", 0, "delay for sending operations")
 	logLevelString := flag.String("logLevel", "info", fmt.Sprintf("log level %s", utils.GetLogLevels()))
 
 	flag.Parse()
@@ -39,7 +38,6 @@ func main() {
 		"logLevel":   *logLevelString,
 		"streamId":   *streamId,
 		"serverPort": *serverPort,
-		"delay":      *delay,
 	}).Debug("Starting application with the following parameters")
 
 	logger.WithField("serverPort", *serverPort).Info("Starting e2e server")

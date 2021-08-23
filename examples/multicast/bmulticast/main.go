@@ -22,7 +22,8 @@ func main() {
 
 	nodePort := flag.Uint("nodePort", 8080, "multicast node port")
 	multicastId := flag.String("multicastId", "bmulticastTopic", "multicast identifier")
-	memberAddrsString := flag.String("memberAddrs", ":8081,:8082", "addresses of the multicast group participants")
+	membersAddrsString := flag.String("membersAddrs", ":8081,:8082", "addresses of the multicast group participants")
+	numThreads := flag.Uint("numThreads", 1, "number of threads used to multicast messages")
 	delay := flag.Uint("delay", 0, "delay for sending operations")
 	logLevelString := flag.String("logLevel", "info", fmt.Sprintf("log level %s", utils.GetLogLevels()))
 
@@ -37,11 +38,12 @@ func main() {
 	}
 
 	log.WithFields(log.Fields{
-		"logLevel":     *logLevelString,
-		"multicastId":  *multicastId,
-		"nodePort":     *nodePort,
-		"memeberAddrs": *memberAddrsString,
-		"delay":        *delay,
+		"logLevel":      *logLevelString,
+		"multicastId":   *multicastId,
+		"nodePort":      *nodePort,
+		"memebersAddrs": *membersAddrsString,
+		"delay":         *delay,
+		"numThreads":    *numThreads,
 	}).Debug("Starting application with the following parameters")
 
 	errCh := make(chan error)
@@ -57,9 +59,9 @@ func main() {
 
 	logger.Info("Initializing multicast...")
 
-	memberAddrs := strings.Split(*memberAddrsString, ",")
+	membersAddrs := strings.Split(*membersAddrsString, ",")
 
-	connections, err := e2e.InitializeConnections(memberAddrs, *delay)
+	connections, err := e2e.InitializeConnections(membersAddrs, *delay)
 
 	if err != nil {
 		logger.WithField("error", err.Error()).Fatalf("Failed to initialize connections")
@@ -79,6 +81,12 @@ func main() {
 
 	if err != nil {
 		logger.WithField("error", err.Error()).Fatal("Failed to add deliverer")
+	}
+
+	logger.Info("Configuring thread pool")
+	err = multicast.ConfigPool(int(*numThreads))
+	if err != nil {
+		logger.WithField("error", err).Fatal("Error while configuring thread pool")
 	}
 
 	logger.Info("Ready to receive message")
