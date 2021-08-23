@@ -32,7 +32,7 @@ func main() {
 	registryAddr := flag.String("registryAddr", ":90", "multicast registry address")
 	numThreads := flag.Uint("numThreads", 1, "number of threads used to multicast messages")
 	multicastId := flag.String("multicastId", "multicastTopic", "identifier of the multicast group")
-	delay := flag.Uint("delay", 0, "delay for sending operations")
+	delay := flag.Uint("delay", 0, "delay for sending operations (ms)")
 	startMulticastGroup := flag.Bool("startMulticastGroup", false, "start multicast group after registering")
 	multicastTypeString := flag.String("multicastType", "BMULTICAST", fmt.Sprintf("multicast typology: %s", multicastregistry.MulticastTypes))
 	logLevelString := flag.String("logLevel", "info", fmt.Sprintf("log level %s", utils.GetLogLevels()))

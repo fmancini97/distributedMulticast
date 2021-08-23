@@ -29,8 +29,8 @@ func main() {
 	registryAddr := flag.String("registryAddr", envparser.LookupEnvOrString("REGISTRY_ADDR", ":90"), "multicast registry address")
 	restPath := flag.String("restPath", envparser.LookupEnvOrString("REST_PATH", "/multicast/api/v1"), "path of the rest api")
 	numThreads := flag.Uint("numThreads", envparser.LookupEnvOrUint("NUM_THREADS", 1), "number of threads used to multicast messages")
-	delay := flag.Uint("delay", envparser.LookupEnvOrUint("DELAY", 0), "delay for sending operations")
-	logLevelString := flag.String("logLevel", envparser.LookupEnvOrString("LOG_LEVEL", "info"), fmt.Sprintf("log level %s", utils.GetLogLevels()))
+	delay := flag.Uint("delay", envparser.LookupEnvOrUint("DELAY", 0), "delay for sending operations (ms)")
+	logLevelString := flag.String("logLevel", envparser.LookupEnvOrString("LOG_LEVEL", "info"), fmt.Sprintf("log level: %s", utils.GetLogLevels()))
 	debug := flag.Bool("debugMode", envparser.LookupEnvOrBool("DEBUG", false), "execute distributed multicast node in debug mode")
 
 	flag.Parse()

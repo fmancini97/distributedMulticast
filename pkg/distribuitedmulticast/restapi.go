@@ -43,11 +43,11 @@ var (
 )
 
 var restAPI = map[string]map[HttpMethod]func(ctx *gin.Context){
-	"/groups": {
-		HttpMethodGET: GetGroups,
-	},
 	"/registry/groups": {
 		HttpMethodGET: GetAllGroups,
+	},
+	"/groups": {
+		HttpMethodGET: GetGroups,
 	},
 	"/groups/:multicastId": {
 		HttpMethodGET:    GetGroupById,

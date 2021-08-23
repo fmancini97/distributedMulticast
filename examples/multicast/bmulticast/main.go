@@ -24,7 +24,7 @@ func main() {
 	multicastId := flag.String("multicastId", "bmulticastTopic", "multicast identifier")
 	membersAddrsString := flag.String("membersAddrs", ":8081,:8082", "addresses of the multicast group participants")
 	numThreads := flag.Uint("numThreads", 1, "number of threads used to multicast messages")
-	delay := flag.Uint("delay", 0, "delay for sending operations")
+	delay := flag.Uint("delay", 0, "delay for sending operations (ms)")
 	logLevelString := flag.String("logLevel", "info", fmt.Sprintf("log level %s", utils.GetLogLevels()))
 
 	flag.Parse()

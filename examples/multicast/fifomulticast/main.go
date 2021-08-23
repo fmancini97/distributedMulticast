@@ -24,7 +24,7 @@ func main() {
 	nodePort := flag.Uint("nodePort", 8080, "multicast node port")
 	multicastId := flag.String("multicastId", "fifomulticastTopic", "multicast identifier")
 	membersAddrsString := flag.String("membersAddrs", ":8081,:8082", "addresses of the multicast group participants")
-	delay := flag.Uint("delay", 0, "delay for sending operations")
+	delay := flag.Uint("delay", 0, "delay for sending operations (ms)")
 	numThreads := flag.Uint("numThreads", 1, "number of threads used to multicast messages")
 	logLevelString := flag.String("logLevel", "info", fmt.Sprintf("log level %s", utils.GetLogLevels()))
 

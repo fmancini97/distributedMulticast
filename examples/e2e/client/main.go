@@ -20,7 +20,7 @@ func main() {
 	serverAddr := flag.String("serverAddr", ":8080", "e2e server to send messages")
 	streamId := flag.String("streamId", "e2eStream", "e2e stream identifier")
 
-	delay := flag.Uint("delay", 0, "delay (ms) for sending operations")
+	delay := flag.Uint("delay", 0, "delay for sending operations (ms)")
 	logLevelString := flag.String("logLevel", "info", fmt.Sprintf("log level %s", utils.GetLogLevels()))
 
 	flag.Parse()
