@@ -1,3 +1,4 @@
+// Package multicast defines interface for multicast operations and it implements multicast algorithms
 package multicast
 
 import (
@@ -21,6 +22,7 @@ func TestBmulticast_Init(t *testing.T) {
 	clientId := "testId"
 	numTargets := 2
 
+	// Initializing bMulticast
 	ch := make(chan communication.Message)
 	smplDlv := deliverer.NewChanDeliverer(ch)
 
@@ -40,6 +42,7 @@ func TestBmulticast_Init(t *testing.T) {
 
 	bm.Init(mtId, clientId, smplDlv, members)
 
+	// Checking if bMulticast is correctly initialized
 	if mtId != bm.multicastId {
 		t.Fatalf("Multicast ID mismatch - Expected: %s, Actual: %s", mtId, bm.multicastId)
 	}
@@ -69,6 +72,7 @@ func TestBmulticast_SendToAll(t *testing.T) {
 	messageString := randstring.RandSeq(10)
 	numMembers := 3
 
+	// Initializing bMulticast
 	appCh := make(chan communication.Message)
 	smplDlv := deliverer.NewChanDeliverer(appCh)
 
@@ -99,6 +103,7 @@ func TestBmulticast_SendToAll(t *testing.T) {
 	wgChan := make(chan bool)
 	wg.Add(numMembers + 1)
 
+	// Multicasting message
 	go func() {
 		err := bm.SendToAll(communication.Message{
 			Metadata: make(map[string]string),
@@ -112,6 +117,7 @@ func TestBmulticast_SendToAll(t *testing.T) {
 
 	}()
 
+	// Checking that bMulticast correctly send message to all members (bMulticast itself, too)
 	for _, ch := range outputCh {
 		go waitMessage(&wg, ch, messageString, errCh)
 	}
@@ -149,6 +155,7 @@ func TestBmulticast_Deliver(t *testing.T) {
 	messageString := randstring.RandSeq(20)
 	numMembers := 3
 
+	// Initializing bMulticast
 	ch := make(chan communication.Message)
 	smplDlv := deliverer.NewChanDeliverer(ch)
 
@@ -172,6 +179,7 @@ func TestBmulticast_Deliver(t *testing.T) {
 
 	errCh := make(chan error)
 
+	// Delivering message to bMulticast
 	go func() {
 		err := bm.Deliver(communication.Message{
 			Metadata: make(map[string]string),
@@ -182,6 +190,7 @@ func TestBmulticast_Deliver(t *testing.T) {
 		}
 	}()
 
+	// Waiting for message to be delivered to the upper level
 	select {
 	case message := <-ch:
 		if string(message.Payload) != messageString {
@@ -214,6 +223,7 @@ func bMulticasting(t *testing.T, singleSender bool) {
 
 	counter := uint64(0)
 
+	// Initializing bMulticast
 	members, chDeliverers, err := initTestBMulticast(numMembers, delay)
 
 	if err != nil {
@@ -222,8 +232,10 @@ func bMulticasting(t *testing.T, singleSender bool) {
 
 	errCh := make(chan error)
 
+	// Selecting senders
 	senders := selectSender(singleSender, members)
 
+	// Sending messages
 	for _, multicaster := range senders {
 		multicaster := multicaster
 
@@ -240,6 +252,7 @@ func bMulticasting(t *testing.T, singleSender bool) {
 		}
 	}
 
+	// Checking that all members receive all messages
 	var wg sync.WaitGroup
 	wgChan := make(chan bool)
 	wg.Add(numMembers)
@@ -278,7 +291,7 @@ func selectSender(singleSender bool, members map[string]*Container) map[string]*
 	senders := make(map[string]*Container, 0)
 
 	if singleSender {
-		selected := rand.Intn(len(members))
+		selected := rand.New(rand.NewSource(time.Now().UnixNano())).Intn(len(members))
 		index := 0
 		for key, member := range members {
 			if index == selected {

@@ -1,3 +1,4 @@
+// Package multicast defines interface for multicast operations and it implements multicast algorithms
 package multicast
 
 import (
@@ -22,6 +23,7 @@ func init() {
 	fifoLog = log.WithField("layer", "fifo_multicast")
 }
 
+// fifomember maintains the counter and the holdBackQueue of fifo multicast node with identifier id
 type fifomember struct {
 	id            string
 	counter       uint64
@@ -29,6 +31,7 @@ type fifomember struct {
 	mu            sync.Mutex
 }
 
+// fifoMulticast implements FIFO ordering multicast
 type fifoMulticast struct {
 	multicastId string
 	clientId    string
@@ -39,8 +42,11 @@ type fifoMulticast struct {
 }
 
 func (fifom *fifoMulticast) SendToAll(message communication.Message) error {
+
+	// Getting counter
 	counter := atomic.AddUint64(&fifom.counter, 1)
 
+	// Creating metadata
 	message.Metadata[fmt.Sprintf("%s:counter", fifoHeader)] = strconv.FormatUint(counter, 10)
 
 	message.Metadata[fmt.Sprintf("%s:clientId", fifoHeader)] = fifom.clientId
@@ -53,6 +59,7 @@ func (fifom *fifoMulticast) SendToAll(message communication.Message) error {
 		"metadata":    message.Metadata,
 		"payload":     message.Payload}).Debug("Multicasting message")
 
+	// Sending message
 	return fifom.multicaster.SendToAll(message)
 }
 
@@ -99,12 +106,14 @@ func (fifom *fifoMulticast) decorate(deliverer communication.Deliverer) (communi
 
 func (fifom *fifoMulticast) Deliver(message communication.Message) error {
 
+	// Retrieving counter
 	counter, err := strconv.ParseUint(message.Metadata[fmt.Sprintf("%s:counter", fifoHeader)], 10, 64)
 
 	if err != nil {
 		return err
 	}
 
+	// Retrieving source id
 	source, ok := fifom.members[message.Metadata[fmt.Sprintf("%s:clientId", fifoHeader)]]
 
 	if !ok {
@@ -122,7 +131,9 @@ func (fifom *fifoMulticast) Deliver(message communication.Message) error {
 	source.mu.Lock()
 	defer source.mu.Unlock()
 
+	// Checking if it is the next message to deliver
 	if counter == source.counter+1 {
+		// Deliver message
 		logger.WithFields(log.Fields{"metadata": message.Metadata, "payload": message.Payload, "counter": source.counter}).Debug("Delivering message")
 		err := fifom.deliverer.Deliver(message)
 		if err != nil {
@@ -132,6 +143,7 @@ func (fifom *fifoMulticast) Deliver(message communication.Message) error {
 
 		numElem := source.holdBackQueue.Len()
 
+		// Check if there are other message to deliver
 		for i := 0; i < numElem; i++ {
 			element := heap.Pop(source.holdBackQueue).(*priorityqueue.Item)
 			if element.Priority == source.counter+1 {
@@ -148,7 +160,8 @@ func (fifom *fifoMulticast) Deliver(message communication.Message) error {
 				break
 			}
 		}
-	} else {
+	} else if counter > source.counter+1 {
+		// Putting message in the hold-back queue
 		logger.WithFields(log.Fields{"metadata": message.Metadata, "payload": message.Payload, "counter": source.counter}).Debug("Putting message in the hold-back queue")
 		heap.Push(source.holdBackQueue, &priorityqueue.Item{
 			Value:    message,

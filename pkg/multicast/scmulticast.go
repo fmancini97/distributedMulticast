@@ -1,3 +1,4 @@
+// Package multicast defines interface for multicast operations and it implements multicast algorithms
 package multicast
 
 import (
@@ -53,6 +54,7 @@ type scOrder struct {
 	clientId  string
 }
 
+// scMulticast implements Total Ordering multicast using scalar clocks
 type scMulticast struct {
 	multicastId     string
 	clientId        string
@@ -64,11 +66,12 @@ type scMulticast struct {
 	waitingElems    map[string]*scElem
 	msgsCounters    map[string]uint64
 	deliverer       communication.Deliverer
-	fifoMulticaster *fifoMulticast
+	fifoMulticaster *fifoMulticast // Total Ordering multicast algorithm require fifo delivery
 }
 
 func (scm *scMulticast) SendToAll(message communication.Message) error {
 
+	// Updating clock
 	scm.timestampMu.Lock()
 	scm.timestamp++
 	timestampScm := scm.timestamp
@@ -76,8 +79,10 @@ func (scm *scMulticast) SendToAll(message communication.Message) error {
 	timestampFifo := scm.fifoMulticaster.counter
 	scm.timestampMu.Unlock()
 
+	// Setting scMulticast metadata
 	timestampString := strconv.FormatUint(timestampScm, 10)
 
+	// Setting timestamp
 	message.Metadata[fmt.Sprintf("%s:timestamp", scHeader)] = timestampString
 
 	message.Metadata[fmt.Sprintf("%s:clientId", scHeader)] = scm.clientId
@@ -95,6 +100,7 @@ func (scm *scMulticast) SendToAll(message communication.Message) error {
 		"payload":     message.Payload,
 	}).Debug("Multicasting message")
 
+	// Setting fifoMulticast metadata
 	message.Metadata[fmt.Sprintf("%s:counter", fifoHeader)] = strconv.FormatUint(timestampFifo, 10)
 
 	message.Metadata[fmt.Sprintf("%s:clientId", fifoHeader)] = scm.clientId
@@ -108,6 +114,7 @@ func (scm *scMulticast) SendToAll(message communication.Message) error {
 		"payload":     message.Payload,
 	}).Debug("Multicasting message")
 
+	// Multicasting message
 	return scm.fifoMulticaster.multicaster.SendToAll(message)
 }
 
@@ -174,7 +181,7 @@ func (scm *scMulticast) Deliver(message communication.Message) error {
 		"payload":  message.Payload,
 	}).Debug("New message received")
 
-	// Update clock
+	// Updating clock
 	scm.timestampMu.Lock()
 	if timestamp > scm.timestamp {
 		logger.Debug("Updating clock")
@@ -211,6 +218,7 @@ func (scm *scMulticast) Deliver(message communication.Message) error {
 		scm.waitingElems[messageId] = scElm
 	}
 
+	// Updating highest timestamp received from sourceId
 	sourceMsgTimestamp := scm.msgsCounters[sourceId]
 	if sourceMsgTimestamp < timestamp {
 		logger.Debug("Updating last timestamp received from source node")
@@ -228,12 +236,16 @@ func (scm *scMulticast) Deliver(message communication.Message) error {
 		scElm.messageId = messageId
 
 		logger.Debug("Putting message in the hold-back queue")
+
+		// Putting message in the hold-back queue
 		scm.holdBackQueue.Push(&priorityqueue.Item{Value: scElm, Priority: scOrder{timestamp: timestamp, clientId: sourceId}})
 
+		// Multicasting ack
 		go func() {
 
 			ackMessage := communication.NewMessage(nil)
 
+			// Updating clock
 			scm.timestampMu.Lock()
 			scm.timestamp++
 			ackTimestamp := scm.timestamp
@@ -241,6 +253,7 @@ func (scm *scMulticast) Deliver(message communication.Message) error {
 			timestampFifo := scm.fifoMulticaster.counter
 			scm.timestampMu.Unlock()
 
+			// Setting scMulticast metadata
 			ackMessage.Metadata[fmt.Sprintf("%s:timestamp", scHeader)] = strconv.FormatUint(ackTimestamp, 10)
 
 			ackMessage.Metadata[fmt.Sprintf("%s:clientId", scHeader)] = scm.clientId
@@ -251,6 +264,7 @@ func (scm *scMulticast) Deliver(message communication.Message) error {
 
 			logger.WithField("ack", ackMessage.Metadata).Debug("Multicasting ack")
 
+			// Setting fifoMulticast metadata
 			ackMessage.Metadata[fmt.Sprintf("%s:counter", fifoHeader)] = strconv.FormatUint(timestampFifo, 10)
 
 			ackMessage.Metadata[fmt.Sprintf("%s:clientId", fifoHeader)] = scm.clientId
@@ -271,6 +285,7 @@ func (scm *scMulticast) Deliver(message communication.Message) error {
 		}()
 
 	case scAck:
+		// Processing acknowledgement
 		logger.Debug("Processing ack message")
 
 		scElm.recvAcks[sourceId] = true
@@ -281,6 +296,7 @@ func (scm *scMulticast) Deliver(message communication.Message) error {
 	for i := 0; i < numElem; i++ {
 		element := heap.Pop(scm.holdBackQueue).(*priorityqueue.Item)
 
+		// Checking that node has received message with higher timestamps from all other nodes
 		for _, msgCounter := range scm.msgsCounters {
 			if msgCounter <= element.Priority.(scOrder).timestamp {
 				heap.Push(scm.holdBackQueue, element)
@@ -289,6 +305,12 @@ func (scm *scMulticast) Deliver(message communication.Message) error {
 		}
 
 		scElm = element.Value.(*scElem)
+
+		// Checking that node has received all acks for the message
+		if len(scElm.recvAcks) != scm.numMembers {
+			heap.Push(scm.holdBackQueue, element)
+			return nil
+		}
 
 		delete(scm.waitingElems, scElm.messageId)
 

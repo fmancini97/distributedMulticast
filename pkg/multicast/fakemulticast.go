@@ -1,9 +1,11 @@
+// Package multicast defines interface for multicast operations and it implements multicast algorithms
 package multicast
 
 import (
 	"gitlab.com/f_mancini/distributedMulticast/pkg/communication"
 )
 
+// fakeMulticast is a fake multicast struct used only for test purposes
 type fakeMulticast struct {
 	mtId      string
 	clientId  string

@@ -1,3 +1,4 @@
+// Package multicastregistry implements a server for discovering multicast groups and registering nodes to groups
 package multicastregistry
 
 import (
@@ -30,6 +31,7 @@ type group struct {
 	groupInfo *registrygrpc.GroupInfo
 }
 
+// Register registers the calling node to a multicast group
 func (s *server) Register(ctx context.Context, in *registrygrpc.RegistrationInfo) (*registrygrpc.RegistrationAnswer, error) {
 
 	source, ok := peer.FromContext(ctx)
@@ -57,9 +59,11 @@ func (s *server) Register(ctx context.Context, in *registrygrpc.RegistrationInfo
 	groupsMu.Lock()
 	defer groupsMu.Unlock()
 
+	// Checking if the group already exists
 	multicastGroup, exists := groups[multicastId]
 
 	if exists {
+		// Checking that the node can join the group
 		logger.WithField("multicastGroup", multicastGroup).Info("Multicast group already exists")
 
 		if multicastGroup.groupInfo.MulticastType != in.MulticastType {
@@ -75,6 +79,7 @@ func (s *server) Register(ctx context.Context, in *registrygrpc.RegistrationInfo
 		}
 
 	} else {
+		// Creating the group
 		logger.WithField("multicastGroup", multicastGroup).Info("Missing multicast group... creating")
 
 		multicastGroup = &group{groupInfo: &registrygrpc.GroupInfo{
@@ -86,6 +91,8 @@ func (s *server) Register(ctx context.Context, in *registrygrpc.RegistrationInfo
 
 		groups[multicastId] = multicastGroup
 	}
+
+	// Registering node to the group
 
 	memberInfo := new(registrygrpc.MemberInfo)
 	memberInfo.Id = srcAddr
@@ -102,6 +109,7 @@ func (s *server) Register(ctx context.Context, in *registrygrpc.RegistrationInfo
 	}, nil
 }
 
+// GetStatus returns infos about the group associated to multicastId
 func (s *server) GetStatus(ctx context.Context, in *registrygrpc.MulticastId) (*registrygrpc.GroupInfo, error) {
 	source, ok := peer.FromContext(ctx)
 
@@ -140,6 +148,9 @@ func (s *server) GetStatus(ctx context.Context, in *registrygrpc.MulticastId) (*
 
 }
 
+// StartGroup enables multicast in the group.
+// All processes belonging to the group can initializes the necessary structure and
+// then they must communicate they are ready using Ready function
 func (s *server) StartGroup(ctx context.Context, in *registrygrpc.RequestData) (*registrygrpc.GroupInfo, error) {
 	source, ok := peer.FromContext(ctx)
 
@@ -164,6 +175,7 @@ func (s *server) StartGroup(ctx context.Context, in *registrygrpc.RequestData) (
 	groupsMu.RLock()
 	defer groupsMu.RUnlock()
 
+	// Checking if the group exists
 	mGroup, ok := groups[multicastId]
 
 	if !ok {
@@ -174,16 +186,19 @@ func (s *server) StartGroup(ctx context.Context, in *registrygrpc.RequestData) (
 	mGroup.mu.Lock()
 	defer mGroup.mu.Unlock()
 
+	// Checking if the group can be started
 	if mGroup.groupInfo.Status != registrygrpc.Status_OPENING {
 		logger.WithField("status", registrygrpc.Status_name[int32(mGroup.groupInfo.Status)]).Warn("Cannot start the group")
 		return nil, status.Errorf(codes.Canceled, "Cannot start group")
 	}
 
+	// Checking if the process belong to the group
 	if _, ok = mGroup.groupInfo.Members[clientId]; !ok {
 		logger.Warn("Client does not belong to the group")
 		return nil, status.Errorf(codes.PermissionDenied, "Not registered to the group")
 	}
 
+	// Updating group status
 	mGroup.groupInfo.Status = registrygrpc.Status_STARTING
 
 	logger.Info("Group started correctly")
@@ -191,68 +206,8 @@ func (s *server) StartGroup(ctx context.Context, in *registrygrpc.RequestData) (
 	return mGroup.groupInfo, nil
 }
 
-func (s *server) CloseGroup(ctx context.Context, in *registrygrpc.RequestData) (*registrygrpc.GroupInfo, error) {
-	source, ok := peer.FromContext(ctx)
-
-	if !ok {
-		return nil, status.Errorf(codes.InvalidArgument, "Missing source address")
-	}
-
-	src := source.Addr.String()
-
-	multicastId := in.MulticastId
-	clientId := in.ClientId
-
-	logger := registryServerLog.WithFields(log.Fields{
-		"method":      "CloseGroup",
-		"clientAddr":  src,
-		"multicastId": multicastId,
-		"clientId":    clientId,
-	})
-
-	logger.Info("Starting closing procedure")
-
-	groupsMu.RLock()
-	defer groupsMu.RUnlock()
-
-	mGroup, ok := groups[multicastId]
-
-	if !ok {
-		logger.Warn("Missing group")
-		return nil, status.Errorf(codes.NotFound, "Group not found")
-	}
-
-	mGroup.mu.Lock()
-	defer mGroup.mu.Unlock()
-
-	if mGroup.groupInfo.Status != registrygrpc.Status_ACTIVE && mGroup.groupInfo.Status != registrygrpc.Status_CLOSING {
-		logger.WithField("status", registrygrpc.Status_name[int32(mGroup.groupInfo.Status)]).Warn("Cannot close the group")
-		return nil, status.Errorf(codes.Canceled, "Cannot start group")
-	}
-
-	member, ok := mGroup.groupInfo.Members[clientId]
-
-	if !ok {
-		logger.Warn("Client does not belong to the group")
-		return nil, status.Errorf(codes.PermissionDenied, "Not registered to the group")
-	}
-
-	mGroup.groupInfo.Status = registrygrpc.Status_CLOSING
-
-	if member.Ready {
-		member.Ready = false
-		mGroup.groupInfo.ReadyMembers--
-		if mGroup.groupInfo.ReadyMembers == 0 {
-			logger.Info("Closing group")
-			mGroup.groupInfo.Status = registrygrpc.Status_CLOSED
-		}
-	}
-
-	logger.Info("Closing procedure started correctly")
-
-	return mGroup.groupInfo, nil
-}
-
+// Ready stats that the calling node has correctly initialized the required structures for multicast.
+// Nodes can multicast messages when all members have called the Ready function
 func (s *server) Ready(ctx context.Context, in *registrygrpc.RequestData) (*registrygrpc.GroupInfo, error) {
 
 	source, ok := peer.FromContext(ctx)
@@ -278,6 +233,7 @@ func (s *server) Ready(ctx context.Context, in *registrygrpc.RequestData) (*regi
 	groupsMu.RLock()
 	defer groupsMu.RUnlock()
 
+	// Checking if the group exists
 	mGroup, ok := groups[multicastId]
 
 	if !ok {
@@ -288,6 +244,7 @@ func (s *server) Ready(ctx context.Context, in *registrygrpc.RequestData) (*regi
 	mGroup.mu.Lock()
 	defer mGroup.mu.Unlock()
 
+	// Checking if the group is in the correct status
 	if mGroup.groupInfo.Status != registrygrpc.Status_STARTING {
 		logger.WithField("status", registrygrpc.Status_name[int32(mGroup.groupInfo.Status)]).Warn("Cannot register ready node")
 		return nil, status.Errorf(codes.Canceled, "Cannot start group")
@@ -295,6 +252,7 @@ func (s *server) Ready(ctx context.Context, in *registrygrpc.RequestData) (*regi
 
 	var member *registrygrpc.MemberInfo
 
+	// Checking if the process belongs to the group
 	if member, ok = mGroup.groupInfo.Members[clientId]; !ok {
 		logger.Warn("Client does not belong to the group")
 		return nil, status.Errorf(codes.PermissionDenied, "Not registered to the group")
@@ -306,6 +264,7 @@ func (s *server) Ready(ctx context.Context, in *registrygrpc.RequestData) (*regi
 	}
 
 	if mGroup.groupInfo.ReadyMembers == uint64(len(mGroup.groupInfo.Members)) {
+		// All members are ready, they can multicast messages
 		mGroup.groupInfo.Status = registrygrpc.Status_ACTIVE
 	}
 
@@ -315,6 +274,74 @@ func (s *server) Ready(ctx context.Context, in *registrygrpc.RequestData) (*regi
 
 }
 
+// CloseGroup closes the group. The process cannot longer use the group to multicast messages
+func (s *server) CloseGroup(ctx context.Context, in *registrygrpc.RequestData) (*registrygrpc.GroupInfo, error) {
+	source, ok := peer.FromContext(ctx)
+
+	if !ok {
+		return nil, status.Errorf(codes.InvalidArgument, "Missing source address")
+	}
+
+	src := source.Addr.String()
+
+	multicastId := in.MulticastId
+	clientId := in.ClientId
+
+	logger := registryServerLog.WithFields(log.Fields{
+		"method":      "CloseGroup",
+		"clientAddr":  src,
+		"multicastId": multicastId,
+		"clientId":    clientId,
+	})
+
+	logger.Info("Starting closing procedure")
+
+	groupsMu.RLock()
+	defer groupsMu.RUnlock()
+
+	// Checking if the group exists
+	mGroup, ok := groups[multicastId]
+
+	if !ok {
+		logger.Warn("Missing group")
+		return nil, status.Errorf(codes.NotFound, "Group not found")
+	}
+
+	mGroup.mu.Lock()
+	defer mGroup.mu.Unlock()
+
+	// Checking if the group can be closed
+	if mGroup.groupInfo.Status != registrygrpc.Status_ACTIVE && mGroup.groupInfo.Status != registrygrpc.Status_CLOSING {
+		logger.WithField("status", registrygrpc.Status_name[int32(mGroup.groupInfo.Status)]).Warn("Cannot close the group")
+		return nil, status.Errorf(codes.Canceled, "Cannot start group")
+	}
+
+	// Checking if the node belongs to the group
+	member, ok := mGroup.groupInfo.Members[clientId]
+
+	if !ok {
+		logger.Warn("Client does not belong to the group")
+		return nil, status.Errorf(codes.PermissionDenied, "Not registered to the group")
+	}
+
+	mGroup.groupInfo.Status = registrygrpc.Status_CLOSING
+
+	if member.Ready {
+		member.Ready = false
+		mGroup.groupInfo.ReadyMembers--
+		if mGroup.groupInfo.ReadyMembers == 0 {
+			// Closing definitely the group when all members have called CloseGroup function
+			logger.Info("Closing group")
+			mGroup.groupInfo.Status = registrygrpc.Status_CLOSED
+		}
+	}
+
+	logger.Info("Closing procedure started correctly")
+
+	return mGroup.groupInfo, nil
+}
+
+// List lists all group registered in the registry
 func (s *server) List(_ *registrygrpc.Empty, stream registrygrpc.Registry_ListServer) error {
 	source, ok := peer.FromContext(stream.Context())
 

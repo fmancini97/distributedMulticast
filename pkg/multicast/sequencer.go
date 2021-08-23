@@ -1,3 +1,4 @@
+// Package multicast defines interface for multicast operations and it implements multicast algorithms
 package multicast
 
 import (
@@ -45,6 +46,7 @@ var (
 
 type seqMtItem struct {
 	message        *communication.Message
+	messageReady   bool
 	sequenceNumber *uint64
 }
 
@@ -76,7 +78,10 @@ func (seqItem *seqMtItem) updateSeqMtItem(message communication.Message) error {
 
 		seqItem.sequenceNumber = &seqNum
 	case seqData:
-		seqItem.message = &message
+		seqItem.message = &communication.Message{
+			Metadata: message.Metadata,
+			Payload:  message.Payload,
+		}
 	}
 
 	return nil
@@ -86,6 +91,8 @@ func (seqItem *seqMtItem) isReady() bool {
 	return seqItem.sequenceNumber != nil && seqItem.message != nil
 }
 
+// seqMulticast implements Total Ordering multicast algorithm with sequencer.
+// It represents the worker node of the algorithm
 type seqMulticast struct {
 	multicastId   string
 	clientId      string
@@ -102,6 +109,8 @@ type seqMulticast struct {
 func (seq *seqMulticast) SendToAll(message communication.Message) error {
 	counter := atomic.AddUint64(&seq.localCounter, 1)
 	messageId := fmt.Sprintf("%s-%d", seq.clientId, counter)
+
+	// Adding metadata to message
 	message.Metadata[fmt.Sprintf("%s:messageId", seqHeader)] = messageId
 	message.Metadata[fmt.Sprintf("%s:messageType", seqHeader)] = seqMessageTypeName[seqData]
 
@@ -115,6 +124,7 @@ func (seq *seqMulticast) SendToAll(message communication.Message) error {
 		"payload":     message.Payload,
 	}).Debug("Multicasting message")
 
+	// Multicasting message
 	return seq.multicaster.SendToAll(message)
 }
 
@@ -200,16 +210,28 @@ func (seq *seqMulticast) Deliver(message communication.Message) error {
 	delete(seq.waitingItems, messageId)
 
 	message = *waitItem.message
-	message.Metadata[fmt.Sprintf("%s:seqOrder", seqHeader)] = strconv.FormatUint(*waitItem.sequenceNumber, 10)
 
+	// Putting element in the hold-back queue
 	heap.Push(seq.holdBackQueue, &priorityqueue.Item{Value: message, Priority: *waitItem.sequenceNumber})
 
 	numElems := seq.holdBackQueue.Len()
 
 	for i := 0; i < numElems; i++ {
 		element := heap.Pop(seq.holdBackQueue).(*priorityqueue.Item)
+
+		// Checking if this message is the next one to deliver
 		if element.Priority == seq.globalCounter+1 {
 			message = element.Value.(communication.Message)
+			newMetadata := make(map[string]string)
+
+			for key, value := range message.Metadata {
+				newMetadata[key] = value
+			}
+			newMetadata[fmt.Sprintf("%s:seqOrder", seqHeader)] = strconv.FormatUint(element.Priority.(uint64), 10)
+			message = communication.Message{
+				Metadata: newMetadata,
+				Payload:  message.Payload,
+			}
 			logger.WithFields(log.Fields{
 				"counter":  element.Priority,
 				"metadata": message.Metadata,
@@ -273,6 +295,8 @@ func (seq *seqMulticast) Init(multicaster Multicast) error {
 
 }
 
+// seqMulticastMaster implements Total Ordering multicast algorithm with sequencer.
+// It represents the master node of the algorithm
 type seqMulticastMaster struct {
 	globalCounter uint64
 	seqmt         *seqMulticast
@@ -380,6 +404,7 @@ func (seq *seqMulticastMaster) Deliver(message communication.Message) error {
 		metadata[fmt.Sprintf("%s:messageType", seqHeader)] = seqMessageTypeName[seqOrder]
 		metadata[fmt.Sprintf("%s:seqOrder", seqHeader)] = strconv.FormatUint(atomic.AddUint64(&seq.globalCounter, 1), 10)
 		go func() {
+			// Multicasting sequence number of the message
 			logger.WithField("seqOrder", metadata).Debug("Sending order message")
 
 			err := seq.seqmt.multicaster.SendToAll(communication.Message{Metadata: metadata})

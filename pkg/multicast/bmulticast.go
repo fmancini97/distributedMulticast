@@ -1,3 +1,4 @@
+// Package multicast defines interface for multicast operations and it implements multicast algorithms
 package multicast
 
 import (
@@ -37,6 +38,7 @@ func (bm *bMulticast) SendToAll(message communication.Message) error {
 	responseCh := make(chan sendResult)
 	defer close(responseCh)
 
+	// Sending message using the thread pool
 	go func() {
 		for index := range rand.Perm(len(bm.members)) {
 			data := sendData{
@@ -52,6 +54,7 @@ func (bm *bMulticast) SendToAll(message communication.Message) error {
 	var err error
 	err = nil
 
+	// Waiting for responses
 	for i := 0; i < len(bm.members); i++ {
 		result := <-responseCh
 		if result.err != nil {

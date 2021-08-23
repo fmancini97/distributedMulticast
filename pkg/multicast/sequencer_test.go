@@ -1,3 +1,4 @@
+// Package multicast defines interface for multicast operations and it implements multicast algorithms
 package multicast
 
 import (
@@ -22,18 +23,27 @@ func TestSeqMulticast_Init(t *testing.T) {
 
 	numMembers := 3
 
+	// Initializing seqMulticaster
 	ch := make(chan communication.Message)
 	smplDlv := deliverer.NewChanDeliverer(ch)
 
 	mtChan := make(chan communication.Message)
 
 	members := make([]string, 0)
-
-	for i := 0; i < numMembers-1; i++ {
-		members = append(members, randstring.RandSeq(10))
-	}
+	membersMap := make(map[string]bool)
 
 	members = append(members, clientId)
+	membersMap[clientId] = true
+
+	for i := 0; i < numMembers-1; i++ {
+		memberId := randstring.RandSeq(10)
+		for _, ok := membersMap[memberId]; ok; {
+			memberId = randstring.RandSeq(10)
+		}
+
+		members = append(members, memberId)
+		membersMap[memberId] = true
+	}
 
 	fakeMt := new(fakeMulticast)
 	fakeMt.mtId = mtId
@@ -49,6 +59,7 @@ func TestSeqMulticast_Init(t *testing.T) {
 		t.Fatalf("Error while initializing multicaster: %s", err)
 	}
 
+	// Checking if seqMulticast is correctly initialized
 	err = checkSequencer(seqm, mtId, clientId, smplDlv, members)
 	if err != nil {
 		t.Fatalf("Error while checking sequecer: %s", err)
@@ -83,18 +94,27 @@ func TestSeqMulticastMaster_Init(t *testing.T) {
 
 	numMembers := 3
 
+	// Initializing seqMulticaster
 	ch := make(chan communication.Message)
 	smplDlv := deliverer.NewChanDeliverer(ch)
 
 	mtChan := make(chan communication.Message)
 
 	members := make([]string, 0)
-
-	for i := 0; i < numMembers-1; i++ {
-		members = append(members, randstring.RandSeq(10))
-	}
+	membersMap := make(map[string]bool)
 
 	members = append(members, clientId)
+	membersMap[clientId] = true
+
+	for i := 0; i < numMembers-1; i++ {
+		memberId := randstring.RandSeq(10)
+		for _, ok := membersMap[memberId]; ok; {
+			memberId = randstring.RandSeq(10)
+		}
+
+		members = append(members, memberId)
+		membersMap[memberId] = true
+	}
 
 	fakeMt := new(fakeMulticast)
 	fakeMt.mtId = mtId
@@ -110,6 +130,7 @@ func TestSeqMulticastMaster_Init(t *testing.T) {
 		t.Fatalf("Error while initializing multicaster: %s", err)
 	}
 
+	// Checking if seqMulticast is correctly initialized
 	err = checkSequencer(seqm.seqmt, mtId, clientId, smplDlv, members)
 	if err != nil {
 		t.Fatalf("Error while checking sequecer: %s", err)
@@ -123,17 +144,27 @@ func TestSeqMulticast_SendToAll(t *testing.T) {
 	numMessages := uint64(3)
 	numMembers := 3
 
+	// Initializing seqMulticast
 	ch := make(chan communication.Message)
 	smplDlv := deliverer.NewChanDeliverer(ch)
 
 	mtChan := make(chan communication.Message)
 
 	members := make([]string, 0)
-	for i := 0; i < numMembers-1; i++ {
-		members = append(members, randstring.RandSeq(10))
-	}
+	membersMap := make(map[string]bool)
 
 	members = append(members, clientId)
+	membersMap[clientId] = true
+
+	for i := 0; i < numMembers-1; i++ {
+		memberId := randstring.RandSeq(10)
+		for _, ok := membersMap[memberId]; ok; {
+			memberId = randstring.RandSeq(10)
+		}
+
+		members = append(members, memberId)
+		membersMap[memberId] = true
+	}
 
 	fakeMt := new(fakeMulticast)
 	fakeMt.mtId = mtId
@@ -148,6 +179,7 @@ func TestSeqMulticast_SendToAll(t *testing.T) {
 		t.Fatalf("Error while initializing Sequencer: %s", err)
 	}
 
+	// Multicasting message
 	seqMulticastSendToAll(t, numMessages, seqm, mtChan)
 }
 
@@ -158,17 +190,27 @@ func TestSeqMulticastMaster_SendToAll(t *testing.T) {
 	numMessages := uint64(3)
 	numMembers := 3
 
+	// Initializing seqMulticast
 	ch := make(chan communication.Message)
 	smplDlv := deliverer.NewChanDeliverer(ch)
 
 	mtChan := make(chan communication.Message)
 
 	members := make([]string, 0)
-	for i := 0; i < numMembers-1; i++ {
-		members = append(members, randstring.RandSeq(10))
-	}
+	membersMap := make(map[string]bool)
 
 	members = append(members, clientId)
+	membersMap[clientId] = true
+
+	for i := 0; i < numMembers-1; i++ {
+		memberId := randstring.RandSeq(10)
+		for _, ok := membersMap[memberId]; ok; {
+			memberId = randstring.RandSeq(10)
+		}
+
+		members = append(members, memberId)
+		membersMap[memberId] = true
+	}
 
 	fakeMt := new(fakeMulticast)
 	fakeMt.mtId = mtId
@@ -183,12 +225,14 @@ func TestSeqMulticastMaster_SendToAll(t *testing.T) {
 		t.Fatalf("Error while initializing Sequencer: %s", err)
 	}
 
+	// Multicasting message
 	seqMulticastSendToAll(t, numMessages, seqm, mtChan)
 }
 
 func seqMulticastSendToAll(t *testing.T, numMessages uint64, seqm Multicast, mtChan chan communication.Message) {
 	errCh := make(chan error)
 
+	// Multicasting messages
 	for counter := uint64(0); counter < numMessages; counter++ {
 		counter := counter
 		go func() {
@@ -201,9 +245,11 @@ func seqMulticastSendToAll(t *testing.T, numMessages uint64, seqm Multicast, mtC
 		}()
 	}
 
+	// Receiving messages
 	for receivedMsgs := make(map[string]bool); uint64(len(receivedMsgs)) == numMessages; {
 		select {
 		case message := <-mtChan:
+			// Checking that message is correct
 			err := checkSeqDataMessage(message)
 			if err != nil {
 				t.Fatalf("Error while checking message: %s", err)
@@ -239,23 +285,35 @@ func checkSeqDataMessage(message communication.Message) error {
 }
 
 func TestSeqMulticast_Deliver(t *testing.T) {
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+
 	mtId := "testSeqMulticast"
 	clientId := randstring.RandSeq(10)
 
 	numMessages := uint64(6)
 	numMembers := 3
 
+	// Initializing seqMulticast
 	ch := make(chan communication.Message)
 	smplDlv := deliverer.NewChanDeliverer(ch)
 
 	mtChan := make(chan communication.Message)
 
 	members := make([]string, 0)
-	for i := 0; i < numMembers-1; i++ {
-		members = append(members, randstring.RandSeq(10))
-	}
+	membersMap := make(map[string]bool)
 
 	members = append(members, clientId)
+	membersMap[clientId] = true
+
+	for i := 0; i < numMembers-1; i++ {
+		memberId := randstring.RandSeq(10)
+		for _, ok := membersMap[memberId]; ok; {
+			memberId = randstring.RandSeq(10)
+		}
+
+		members = append(members, memberId)
+		membersMap[memberId] = true
+	}
 
 	fakeMt := new(fakeMulticast)
 	fakeMt.mtId = mtId
@@ -274,10 +332,11 @@ func TestSeqMulticast_Deliver(t *testing.T) {
 
 	messages := make([]communication.Message, 0)
 
+	// Preparing messages to be delivered
 	for i := uint64(0); i < numMessages; i++ {
 		metadata := make(map[string]string)
 
-		messageId := fmt.Sprintf("%s:%d", seqm.group[rand.Intn(len(seqm.group))], i)
+		messageId := fmt.Sprintf("%s:%d", seqm.group[r.Intn(len(seqm.group))], i)
 
 		metadata[fmt.Sprintf("%s:messageId", seqHeader)] = messageId
 		metadata[fmt.Sprintf("%s:messageType", seqHeader)] = seqMessageTypeName[seqData]
@@ -301,7 +360,8 @@ func TestSeqMulticast_Deliver(t *testing.T) {
 		})
 	}
 
-	for _, index := range rand.Perm(len(messages)) {
+	// Delivering messages
+	for _, index := range r.Perm(len(messages)) {
 		index := index
 		go func() {
 			err := seqm.Deliver(messages[index])
@@ -311,11 +371,14 @@ func TestSeqMulticast_Deliver(t *testing.T) {
 		}()
 	}
 
+	// Receiving messages
 	for i := uint64(0); i < numMessages; i++ {
 		expectedCounter := i + 1
 
 		select {
 		case message := <-ch:
+
+			// Checking that the message is correct
 			err := checkSeqDataMessage(message)
 			if err != nil {
 				t.Fatalf("Error while checking message: %s", err)
@@ -342,17 +405,27 @@ func TestSeqMulticastMaster_Deliver(t *testing.T) {
 	numMessages := uint64(6)
 	numMembers := 3
 
+	// Initializing seqMulticast
 	ch := make(chan communication.Message)
 	smplDlv := deliverer.NewChanDeliverer(ch)
 
 	mtChan := make(chan communication.Message)
 
 	members := make([]string, 0)
-	for i := 0; i < numMembers-1; i++ {
-		members = append(members, randstring.RandSeq(10))
-	}
+	membersMap := make(map[string]bool)
 
 	members = append(members, clientId)
+	membersMap[clientId] = true
+
+	for i := 0; i < numMembers-1; i++ {
+		memberId := randstring.RandSeq(10)
+		for _, ok := membersMap[memberId]; ok; {
+			memberId = randstring.RandSeq(10)
+		}
+
+		members = append(members, memberId)
+		membersMap[memberId] = true
+	}
 
 	fakeMt := new(fakeMulticast)
 	fakeMt.mtId = mtId
@@ -369,11 +442,12 @@ func TestSeqMulticastMaster_Deliver(t *testing.T) {
 
 	errCh := make(chan error)
 
+	// Delivering messages
 	go func() {
 		for i := uint64(0); i < numMessages; i++ {
 			metadata := make(map[string]string)
 
-			messageId := fmt.Sprintf("%s:%d", seqm.seqmt.group[rand.Intn(len(seqm.seqmt.group))], i)
+			messageId := fmt.Sprintf("%s:%d", seqm.seqmt.group[rand.New(rand.NewSource(time.Now().UnixNano())).Intn(len(seqm.seqmt.group))], i)
 
 			metadata[fmt.Sprintf("%s:messageId", seqHeader)] = messageId
 			metadata[fmt.Sprintf("%s:messageType", seqHeader)] = seqMessageTypeName[seqData]
@@ -390,11 +464,14 @@ func TestSeqMulticastMaster_Deliver(t *testing.T) {
 		}
 	}()
 
+	// Receiving messages
 	for i := uint64(0); i < numMessages; {
 		expectedCounter := i + 1
 
 		select {
 		case message := <-ch:
+
+			// Checking that message is correct
 			err := checkSeqDataMessage(message)
 			if err != nil {
 				t.Fatalf("Error while checking message: %s", err)
@@ -409,6 +486,7 @@ func TestSeqMulticastMaster_Deliver(t *testing.T) {
 
 		case orderMessage := <-mtChan:
 			go func() {
+				// Delivering order messages
 				err := seqm.Deliver(orderMessage)
 				if err != nil {
 					errCh <- err
@@ -442,6 +520,7 @@ func seqMulticaster(t *testing.T, singleSender bool) {
 		t.Fatalf("Error while configuring pool: %s", err)
 	}
 
+	// Initializing seqMulticast
 	bMulticasters, chDeliverers, err := initTestBMulticast(numMembers, delay)
 
 	if err != nil {
@@ -450,7 +529,7 @@ func seqMulticaster(t *testing.T, singleSender bool) {
 
 	errCh := make(chan error)
 
-	masterId := rand.Intn(len(bMulticasters))
+	masterId := rand.New(rand.NewSource(time.Now().UnixNano())).Intn(len(bMulticasters))
 
 	index := 0
 
@@ -482,6 +561,7 @@ func seqMulticaster(t *testing.T, singleSender bool) {
 
 	senders := selectSender(singleSender, seqMulticasters)
 
+	// Multicasting messages
 	for _, sender := range senders {
 		sender := sender
 		for i := 0; i < messageToSent; i++ {
@@ -502,7 +582,9 @@ func seqMulticaster(t *testing.T, singleSender bool) {
 	wg.Add(numMembers)
 
 	sequences := make([][]uint64, 0)
+	sequencesMu := new(sync.Mutex)
 
+	// Receiving messages
 	for _, ch := range chDeliverers {
 
 		ch := ch
@@ -523,8 +605,9 @@ func seqMulticaster(t *testing.T, singleSender bool) {
 					return
 				}
 			}
-
+			sequencesMu.Lock()
 			sequences = append(sequences, sequence)
+			sequencesMu.Unlock()
 
 			wg.Done()
 		}()
@@ -543,6 +626,7 @@ func seqMulticaster(t *testing.T, singleSender bool) {
 		t.Fatalf("Error while multicasting: %s", err)
 	}
 
+	// Checking that all node have received message in the same order
 	for i := 0; i < len(senders)*messageToSent; i++ {
 		var seq *uint64
 		seq = nil

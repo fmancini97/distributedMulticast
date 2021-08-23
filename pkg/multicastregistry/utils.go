@@ -1,3 +1,4 @@
+// Package multicastregistry implements a server for discovering multicast groups and registering nodes to groups
 package multicastregistry
 
 import (

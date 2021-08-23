@@ -1,3 +1,4 @@
+// Package multicast defines interface for multicast operations and it implements multicast algorithms
 package multicast
 
 import (
@@ -21,18 +22,27 @@ func TestFifoMulticast_Init(t *testing.T) {
 
 	numMembers := 3
 
+	// Initializing fifoMulticast
 	ch := make(chan communication.Message)
 	smplDlv := deliverer.NewChanDeliverer(ch)
 
 	mtChan := make(chan communication.Message)
 
 	members := make([]string, 0)
-
-	for i := 0; i < numMembers-1; i++ {
-		members = append(members, randstring.RandSeq(10))
-	}
+	membersMap := make(map[string]bool)
 
 	members = append(members, clientId)
+	membersMap[clientId] = true
+
+	for i := 0; i < numMembers-1; i++ {
+		memberId := randstring.RandSeq(10)
+		for _, ok := membersMap[memberId]; ok; {
+			memberId = randstring.RandSeq(10)
+		}
+
+		members = append(members, memberId)
+		membersMap[memberId] = true
+	}
 
 	fakeMt := new(fakeMulticast)
 	fakeMt.mtId = mtId
@@ -48,6 +58,7 @@ func TestFifoMulticast_Init(t *testing.T) {
 		t.Fatalf("Error while initializing multicaster: %s", err)
 	}
 
+	// Checking that fifoMulticast is correctly initialized
 	err = checkFifoMulticast(fifom, mtId, clientId, smplDlv, members)
 
 	if err != nil {
@@ -84,17 +95,27 @@ func TestFifoMulticast_SendToAll(t *testing.T) {
 	numMessages := uint64(3)
 	numMembers := 3
 
+	// Initializing fifoMulticast
 	ch := make(chan communication.Message)
 	smplDlv := deliverer.NewChanDeliverer(ch)
 
 	mtChan := make(chan communication.Message)
 
 	members := make([]string, 0)
-	for i := 0; i < numMembers-1; i++ {
-		members = append(members, randstring.RandSeq(10))
-	}
+	membersMap := make(map[string]bool)
 
 	members = append(members, clientId)
+	membersMap[clientId] = true
+
+	for i := 0; i < numMembers-1; i++ {
+		memberId := randstring.RandSeq(10)
+		for _, ok := membersMap[memberId]; ok; {
+			memberId = randstring.RandSeq(10)
+		}
+
+		members = append(members, memberId)
+		membersMap[memberId] = true
+	}
 
 	fakeMt := new(fakeMulticast)
 	fakeMt.mtId = mtId
@@ -111,6 +132,7 @@ func TestFifoMulticast_SendToAll(t *testing.T) {
 
 	errCh := make(chan error)
 
+	// Sending messages
 	go func() {
 		for counter := uint64(0); counter < numMessages; counter++ {
 			b := make([]byte, 8)
@@ -126,12 +148,14 @@ func TestFifoMulticast_SendToAll(t *testing.T) {
 		select {
 		case message := <-mtChan:
 
+			// Checking correctness of the received message
 			err := checkFifoMessage(message, clientId)
 
 			if err != nil {
 				t.Fatalf("Error while checking message: %s", err)
 			}
 
+			// Checking that the delivery order is correct
 			messageCounter := binary.LittleEndian.Uint64(message.Payload)
 
 			counterString := message.Metadata[fmt.Sprintf("%s:counter", fifoHeader)]
@@ -175,23 +199,36 @@ func checkFifoMessage(message communication.Message, expectedClientId string) er
 }
 
 func TestFifoMulticast_Deliver(t *testing.T) {
+
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+
 	mtId := "testFifoMulticast"
 	clientId := randstring.RandSeq(10)
 
 	numMessages := uint64(3)
 	numMembers := 3
 
+	// Initializing fifoMulticast
 	ch := make(chan communication.Message)
 	smplDlv := deliverer.NewChanDeliverer(ch)
 
 	mtChan := make(chan communication.Message)
 
 	members := make([]string, 0)
-	for i := 0; i < numMembers-1; i++ {
-		members = append(members, randstring.RandSeq(10))
-	}
+	membersMap := make(map[string]bool)
 
 	members = append(members, clientId)
+	membersMap[clientId] = true
+
+	for i := 0; i < numMembers-1; i++ {
+		memberId := randstring.RandSeq(10)
+		for _, ok := membersMap[memberId]; ok; {
+			memberId = randstring.RandSeq(10)
+		}
+
+		members = append(members, memberId)
+		membersMap[memberId] = true
+	}
 
 	fakeMt := new(fakeMulticast)
 	fakeMt.mtId = mtId
@@ -206,12 +243,13 @@ func TestFifoMulticast_Deliver(t *testing.T) {
 		t.Fatalf("Error while initializing Fifo multicast: %s", err)
 	}
 
-	sourceClientId := members[rand.Intn(numMembers)]
+	sourceClientId := members[r.Intn(numMembers)]
 
 	errCh := make(chan error)
 
+	// Delivering message
 	go func() {
-		for _, counter := range rand.Perm(int(numMessages)) {
+		for _, counter := range r.Perm(int(numMessages)) {
 			metadata := make(map[string]string)
 			metadata[fmt.Sprintf("%s:counter", fifoHeader)] = strconv.FormatUint(uint64(counter+1), 10)
 			metadata[fmt.Sprintf("%s:clientId", fifoHeader)] = sourceClientId
@@ -231,11 +269,14 @@ func TestFifoMulticast_Deliver(t *testing.T) {
 		}
 	}()
 
+	// Receiving messages
 	for i := uint64(0); i < numMessages; i++ {
 		expectedCounter := i + 1
 
 		select {
 		case message := <-ch:
+
+			// Checking that message is correct
 			err := checkFifoMessage(message, sourceClientId)
 			if err != nil {
 				t.Fatalf("Error while checking message: %s", err)
@@ -247,6 +288,7 @@ func TestFifoMulticast_Deliver(t *testing.T) {
 
 			headerCounter, _ := strconv.ParseUint(counterString, 10, 64)
 
+			// Checking order
 			if actualCounter != headerCounter {
 				t.Fatalf("Wrong order - Expected: %d, Actual: %d", actualCounter, headerCounter)
 			}
@@ -274,13 +316,14 @@ func TestFifoMulticastMultiple(t *testing.T) {
 func fifomulticasting(t *testing.T, singleSender bool) {
 	numMembers := 3
 	delay := 1000
-	messageToSent := 10
+	messageToSent := 100
 
 	err := ConfigPool(messageToSent)
 	if err != nil {
 		t.Fatalf("Error while configuring pool: %s", err)
 	}
 
+	// Initializing fifoMulticast
 	bMembers, chDeliverers, err := initTestBMulticast(numMembers, delay)
 
 	if err != nil {
@@ -302,8 +345,10 @@ func fifomulticasting(t *testing.T, singleSender bool) {
 
 	}
 
+	// Selecting senders
 	senders := selectSender(singleSender, fifoMembers)
 
+	// Sending messages
 	for _, sender := range senders {
 		sender := sender
 		for i := 0; i < messageToSent; i++ {
@@ -319,6 +364,7 @@ func fifomulticasting(t *testing.T, singleSender bool) {
 		}
 	}
 
+	// Receiving messages
 	var wg sync.WaitGroup
 	wgChan := make(chan bool)
 	wg.Add(numMembers)
@@ -333,7 +379,6 @@ func fifomulticasting(t *testing.T, singleSender bool) {
 					return
 				}
 				counters[clientId] = 0
-
 			}
 
 			for numMembersCompleted := 0; numMembersCompleted < len(senders); {
@@ -361,6 +406,7 @@ func fifomulticasting(t *testing.T, singleSender bool) {
 						return
 					}
 
+					// Checking delivery order
 					if counter+1 != actualCounter {
 						errCh <- errors.New(fmt.Sprintf("order mismatch - axpected: %d, actual: %d", counter+1, actualCounter))
 						return

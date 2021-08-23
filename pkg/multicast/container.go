@@ -1,3 +1,4 @@
+// Package multicast defines interface for multicast operations and it implements multicast algorithms
 package multicast
 
 import (
@@ -5,6 +6,7 @@ import (
 	"gitlab.com/f_mancini/distributedMulticast/pkg/communication"
 )
 
+// Container maintains the references to the correct delivery and multicast interfaces within the multicast stack
 type Container struct {
 	mlt Multicast
 	dlv communication.Deliverer

@@ -1,3 +1,4 @@
+// Package multicast defines interface for multicast operations and it implements multicast algorithms
 package multicast
 
 import (
@@ -36,12 +37,14 @@ type waitingMessage struct {
 	missingChecks []string // Client id which does not match the delivery requirements
 }
 
+// vcMulticast implements Causal ordering multicast using vector timestamps
 type vcMulticast struct {
 	multicastId    string
 	clientId       string
 	membersId      []string
 	localTimestamp uint64
 	timestamp      map[string]uint64
+	timestampMu    sync.RWMutex
 	group          map[string]*vcMember
 	deliverer      communication.Deliverer
 	multicaster    Multicast
@@ -49,17 +52,22 @@ type vcMulticast struct {
 
 func (vcm *vcMulticast) SendToAll(message communication.Message) error {
 
+	// Putting timestamp in metadata of the message
 	timestampBytes := new(bytes.Buffer)
 
 	encoder := gob.NewEncoder(timestampBytes)
 
 	localTimestamp := atomic.AddUint64(&vcm.localTimestamp, 1)
 
+	vcm.timestampMu.RLock()
+
 	timestampVector := make(map[string]uint64, len(vcm.timestamp))
 
 	for clientId, timestamp := range vcm.timestamp {
 		timestampVector[clientId] = timestamp
 	}
+
+	vcm.timestampMu.RUnlock()
 
 	timestampVector[vcm.clientId] = localTimestamp
 
@@ -84,6 +92,7 @@ func (vcm *vcMulticast) SendToAll(message communication.Message) error {
 		"payload":     message.Payload,
 	}).Debug("Multicasting message")
 
+	// Multicasting messages
 	return vcm.multicaster.SendToAll(message)
 }
 
@@ -136,6 +145,7 @@ func (vcm *vcMulticast) Deliver(message communication.Message) error {
 		"payload":  message.Payload,
 	}).Debug("New message received")
 
+	// Decoding vector timestamp
 	timestampB64, ok := message.Metadata[fmt.Sprintf("%s:timestamp", vcHeader)]
 
 	if !ok {
@@ -174,6 +184,7 @@ func (vcm *vcMulticast) Deliver(message communication.Message) error {
 
 	logger.WithField("clientId", sourceId).Debug("Putting message in the hold-back queue")
 
+	// Putting message in the hold-back queue
 	member.mu.Lock()
 	heap.Push(member.holdBackQueue, &priorityqueue.Item{Value: &waitingMessage{
 		message:       message,
@@ -182,75 +193,110 @@ func (vcm *vcMulticast) Deliver(message communication.Message) error {
 	}, Priority: timestampVector[sourceId]})
 	member.mu.Unlock()
 
+	// Checking messages in all hold-back queues
+	err = vcm.processElements(member, logger)
+	if err != nil {
+		return err
+	}
+
 	for clientId, member := range vcm.group {
-
-		member.mu.Lock()
-
-		if clientId == vcm.clientId {
-			numItems := member.holdBackQueue.Len()
-			for i := 0; i < numItems; i++ {
-				element := heap.Pop(member.holdBackQueue).(*priorityqueue.Item)
-				if element.Priority == vcm.timestamp[vcm.clientId]+1 {
-
-					message := element.Value.(*waitingMessage).message
-					logger.WithFields(log.Fields{
-						"metadata": message.Metadata,
-						"payload":  message.Payload,
-					}).Debug("Delivering message")
-
-					err := vcm.deliverer.Deliver(message)
-					if err != nil {
-						return err
-					}
-					vcm.timestamp[vcm.clientId]++
-				} else {
-					heap.Push(member.holdBackQueue, element)
-					break
-				}
-			}
-		} else {
-			numItems := member.holdBackQueue.Len()
-			for i := 0; i < numItems; i++ {
-				element := heap.Pop(member.holdBackQueue).(*priorityqueue.Item)
-				waitingElem := element.Value.(*waitingMessage)
-
-				missing := make([]string, 0)
-
-				for _, clientId := range waitingElem.missingChecks {
-					if (clientId == member.clientId && waitingElem.timestamp[clientId] != vcm.timestamp[clientId]+1) || (clientId != member.clientId && waitingElem.timestamp[clientId] > vcm.timestamp[clientId]) {
-						missing = append(missing, clientId)
-					}
-				}
-
-				if len(missing) == 0 {
-					vcLog.WithFields(log.Fields{"clientId": member.clientId, "timestamp": waitingElem.timestamp, "message": waitingElem.message}).Debug("Delivering message")
-
-					logger.WithFields(log.Fields{
-						"metadata": waitingElem.message.Metadata,
-						"payload":  waitingElem.message.Payload,
-					}).Debug("Delivering message")
-
-					err := vcm.deliverer.Deliver(waitingElem.message)
-					if err != nil {
-						return err
-					}
-
-					vcm.timestamp[clientId]++
-
-				} else {
-					waitingElem.missingChecks = missing
-					heap.Push(member.holdBackQueue, element)
-					break
-				}
+		if clientId != sourceId {
+			err = vcm.processElements(member, logger)
+			if err != nil {
+				return err
 			}
 		}
-
-		member.mu.Unlock()
-
 	}
 
 	logger.Debug("Message processed")
 
+	return nil
+}
+
+func (vcm *vcMulticast) processElements(member *vcMember, logger *log.Entry) error {
+	member.mu.Lock()
+	defer member.mu.Unlock()
+
+	if member.clientId == vcm.clientId {
+		numItems := member.holdBackQueue.Len()
+		for i := 0; i < numItems; i++ {
+
+			vcm.timestampMu.RLock()
+			sourceTimestamp := vcm.timestamp[vcm.clientId]
+			vcm.timestampMu.RUnlock()
+
+			element := heap.Pop(member.holdBackQueue).(*priorityqueue.Item)
+
+			// Checking if it is the next message to be delivered
+			if element.Priority == sourceTimestamp+1 {
+
+				message := element.Value.(*waitingMessage).message
+				logger.WithFields(log.Fields{
+					"metadata": message.Metadata,
+					"payload":  message.Payload,
+				}).Debug("Delivering message")
+
+				err := vcm.deliverer.Deliver(message)
+				if err != nil {
+					vcm.timestampMu.Unlock()
+					return err
+				}
+
+				// Updating clock
+				vcm.timestampMu.Lock()
+				vcm.timestamp[vcm.clientId]++
+				vcm.timestampMu.Unlock()
+
+			} else {
+				heap.Push(member.holdBackQueue, element)
+				break
+			}
+
+		}
+	} else {
+		numItems := member.holdBackQueue.Len()
+		for i := 0; i < numItems; i++ {
+			element := heap.Pop(member.holdBackQueue).(*priorityqueue.Item)
+			waitingElem := element.Value.(*waitingMessage)
+
+			missing := make([]string, 0)
+
+			vcm.timestampMu.RLock()
+
+			// Checking if the message can be delivered
+			for _, clientId := range waitingElem.missingChecks {
+				if (clientId == member.clientId && waitingElem.timestamp[clientId] != vcm.timestamp[clientId]+1) || (clientId != member.clientId && waitingElem.timestamp[clientId] > vcm.timestamp[clientId]) {
+					missing = append(missing, clientId)
+				}
+			}
+			vcm.timestampMu.RUnlock()
+
+			if len(missing) == 0 {
+				vcLog.WithFields(log.Fields{"clientId": member.clientId, "timestamp": waitingElem.timestamp, "message": waitingElem.message}).Debug("Delivering message")
+
+				logger.WithFields(log.Fields{
+					"metadata": waitingElem.message.Metadata,
+					"payload":  waitingElem.message.Payload,
+				}).Debug("Delivering message")
+
+				// Delivering message
+				err := vcm.deliverer.Deliver(waitingElem.message)
+				if err != nil {
+					return err
+				}
+
+				// Updating clock
+				vcm.timestampMu.Lock()
+				vcm.timestamp[member.clientId]++
+				vcm.timestampMu.Unlock()
+
+			} else {
+				waitingElem.missingChecks = missing
+				heap.Push(member.holdBackQueue, element)
+				break
+			}
+		}
+	}
 	return nil
 }
 

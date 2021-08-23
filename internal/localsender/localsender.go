@@ -4,6 +4,7 @@ import (
 	"errors"
 	"gitlab.com/f_mancini/distributedMulticast/pkg/communication"
 	"math/rand"
+	"sync"
 	"time"
 )
 
@@ -11,6 +12,7 @@ type Sender struct {
 	deliverer communication.Deliverer
 	delay     int // Millisecond
 	rnd       *rand.Rand
+	rdnMu     sync.Mutex
 }
 
 func (ls *Sender) Send(_ string, message communication.Message) error {
@@ -19,7 +21,11 @@ func (ls *Sender) Send(_ string, message communication.Message) error {
 	}
 
 	if ls.delay > 0 {
-		time.Sleep(time.Duration(ls.rnd.Intn(ls.delay)) * time.Millisecond)
+		ls.rdnMu.Lock()
+		delayDuration := time.Duration(ls.rnd.Intn(ls.delay))
+		ls.rdnMu.Unlock()
+
+		time.Sleep(delayDuration * time.Millisecond)
 	}
 
 	return ls.deliverer.Deliver(message)

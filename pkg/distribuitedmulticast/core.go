@@ -178,18 +178,22 @@ func Run(grpcP, restPort uint, registryAddr, relativePath string, numThreads, dl
 	return nil
 }
 
+// closeMulticastGroup closes a multicast group
 func closeMulticastGroup(multicastGroup *MulticastGroup) {
 	multicastGroup.groupMu.Lock()
 
+	// Checking if the group can be closed
 	if registrygrpc.Status(registrygrpc.Status_value[multicastGroup.group.Status]) != registrygrpc.Status_ACTIVE {
 		multicastGroup.groupMu.Unlock()
-
+		return
 	}
 
+	// Changing group status
 	multicastGroup.group.Status = registrygrpc.Status_name[int32(registrygrpc.Status_CLOSING)]
 
 	multicastGroup.groupMu.Unlock()
 
+	// Closing group in the registry
 	groupInfo, err := registryClient.CloseGroup(context.Background(), &registrygrpc.RequestData{MulticastId: multicastGroup.group.MulticastId, ClientId: multicastGroup.clientId})
 	if err != nil {
 		multicastGroup.groupMu.Lock()
@@ -198,6 +202,7 @@ func closeMulticastGroup(multicastGroup *MulticastGroup) {
 		return
 	}
 
+	// Waiting that all member have closed the group
 	updateMulticastGroup(groupInfo, multicastGroup)
 	groupInfo, err = waitStatusChange(groupInfo, multicastGroup, registrygrpc.Status_CLOSING)
 
@@ -210,6 +215,7 @@ func closeMulticastGroup(multicastGroup *MulticastGroup) {
 
 	multicastGroup.groupMu.Lock()
 
+	// Removing structures associated to the multicast group
 	err = e2e.RemoveDeliverer(multicastGroup.group.MulticastId)
 
 	if err != nil {
@@ -234,11 +240,14 @@ func closeMulticastGroup(multicastGroup *MulticastGroup) {
 
 }
 
+// initializeGroup initializes a multicast group
 func initializeGroup(groupInfo *registrygrpc.GroupInfo, multicastGroup *MulticastGroup, isMaster bool) {
 
 	logger := dmLog.WithField("multicastId", multicastGroup.group.MulticastId)
 
 	logger.Info("Waiting for the group to be ready")
+
+	// Waiting that the group is ready
 	updateMulticastGroup(groupInfo, multicastGroup)
 	groupInfo, err := waitStatusChange(groupInfo, multicastGroup, registrygrpc.Status_OPENING)
 
@@ -251,6 +260,7 @@ func initializeGroup(groupInfo *registrygrpc.GroupInfo, multicastGroup *Multicas
 
 	logger.Debug("Group ready, initializing multicast")
 
+	// Initializing multicast data structures
 	err = initializeMulticaster(multicastGroup, isMaster)
 
 	if err != nil {
@@ -262,6 +272,7 @@ func initializeGroup(groupInfo *registrygrpc.GroupInfo, multicastGroup *Multicas
 
 	logger.Info("Notify the registry that the multicaster is ready")
 
+	// Communicating to the registry that the node is ready
 	groupInfo, err = registryClient.Ready(context.Background(), &registrygrpc.RequestData{MulticastId: multicastGroup.group.MulticastId, ClientId: multicastGroup.clientId})
 
 	if err != nil {
@@ -273,6 +284,7 @@ func initializeGroup(groupInfo *registrygrpc.GroupInfo, multicastGroup *Multicas
 
 	logger.Info("Waiting for the other nodes")
 
+	// Waiting tha all other nodes are ready
 	updateMulticastGroup(groupInfo, multicastGroup)
 	groupInfo, err = waitStatusChange(groupInfo, multicastGroup, registrygrpc.Status_STARTING)
 
@@ -287,6 +299,7 @@ func initializeGroup(groupInfo *registrygrpc.GroupInfo, multicastGroup *Multicas
 
 }
 
+// initializeMulticaster allocates the data structures and connections necessary for multicasting
 func initializeMulticaster(multicastGroup *MulticastGroup, isMaster bool) error {
 	mtType, ok := multicasttypemapper.Type[registrygrpc.MulticastType(registrygrpc.MulticastType_value[multicastGroup.group.MulticastType])][isMaster]
 
@@ -298,6 +311,7 @@ func initializeMulticaster(multicastGroup *MulticastGroup, isMaster bool) error 
 
 	dlv := &GroupDeliverer{group: multicastGroup}
 
+	// Initializing connections to other members
 	e2eConnections := make([]*multicast.E2EMember, 0)
 
 	logger.Info("Connecting to multicast members")
@@ -316,6 +330,7 @@ func initializeMulticaster(multicastGroup *MulticastGroup, isMaster bool) error 
 
 	logger.Info("Initializing multicaster")
 
+	// Initializing multicaster
 	multicaster, err := multicast.Initializers[mtType](multicastGroup.group.MulticastId, multicastGroup.clientId, dlv, e2eConnections)
 
 	if err != nil {
@@ -337,6 +352,7 @@ func initializeMulticaster(multicastGroup *MulticastGroup, isMaster bool) error 
 	return nil
 }
 
+// waitStatusChange waits until the status of the group in the registry changes
 func waitStatusChange(groupInfo *registrygrpc.GroupInfo, multicastGroup *MulticastGroup, status registrygrpc.Status) (*registrygrpc.GroupInfo, error) {
 	var err error
 
@@ -367,6 +383,7 @@ func waitStatusChange(groupInfo *registrygrpc.GroupInfo, multicastGroup *Multica
 	return groupInfo, nil
 }
 
+// updateMulticastGroup updates local group infos with ones received from the registry
 func updateMulticastGroup(groupInfo *registrygrpc.GroupInfo, multicastGroup *MulticastGroup) {
 	multicastGroup.groupMu.Lock()
 	defer multicastGroup.groupMu.Unlock()
