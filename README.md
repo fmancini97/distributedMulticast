@@ -46,13 +46,13 @@ The application can be configured using the following flags:
 - ```-restPort uint``` port number of the rest server (default 80)
 
 ### Docker
-The application can be run in a docker container using the dedicated [Dockerfile](Dockerfile). 
+The application can be run in a docker container using the dedicated [Dockerfile](Dockerfile):
 ```shell
 docker build . -t fmancini/distributedMulticast
 docker run -p hostPort:restPort -e ENV1=value1 -e ENV2=value2 fmancini/distributedMulticast 
 ```
 
-[docker-compose.yml](docker-compose.yml) file deploys an application demo.
+[docker-compose.yml](docker-compose.yml) file deploys an application demo:
 ```shell
 docker-compose up
 ```
