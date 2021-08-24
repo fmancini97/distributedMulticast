@@ -8,12 +8,13 @@ import (
 )
 
 var MulticastType = map[string]registrygrpc.MulticastType{
-	"BMULTICAST":     registrygrpc.MulticastType_BMULTICAST,
-	"FIFOMULTICAST":  registrygrpc.MulticastType_FIFOMULTICAST,
-	"TOMULTICASTSEQ": registrygrpc.MulticastType_TOMULTICASTSEQ,
-	"TOMULTICASTSC":  registrygrpc.MulticastType_TOMULTICASTSC,
-	"COMULTICAST":    registrygrpc.MulticastType_COMULTICAST,
-	"TOCOMULTICAST":  registrygrpc.MulticastType_TOCOMULTICAST,
+	"BMULTICAST":         registrygrpc.MulticastType_BMULTICAST,
+	"FIFOMULTICAST":      registrygrpc.MulticastType_FIFOMULTICAST,
+	"TOMULTICASTSEQ":     registrygrpc.MulticastType_TOMULTICASTSEQ,
+	"TOFIFOMULTICASTSEQ": registrygrpc.MulticastType_TOFIFOMULTICASTSEQ,
+	"TOMULTICASTSC":      registrygrpc.MulticastType_TOMULTICASTSC,
+	"COMULTICAST":        registrygrpc.MulticastType_COMULTICAST,
+	"TOCOMULTICAST":      registrygrpc.MulticastType_TOCOMULTICAST,
 }
 
 var (

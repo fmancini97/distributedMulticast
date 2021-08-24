@@ -12,10 +12,12 @@ Available multicast algorithms are:
   in the same order.
 - ```TOMULTICASTSEQ``` Total ordering multicast. All messages are delivered in the same order to all nodes. 
   Centralized implementation using a sequencer.
-- ```TOMULTICASTSC``` Total ordering multicast. All messages are delivered in the same order to all nodes.
-  Decentralized implementation using scalar timestamps.
-- ```COMULTICAST``` Causal ordering multicast. Messages are delivered by maintaining cause-and-effect relationships. 
-  Furthermore, it guarantees Fifo ordering. Decentralized implementation using vector timestamps.
+- ```TOFIFOMULTICASTSEQ``` Total and Fifo ordering multicast. All messages are delivered in the same order to all nodes.
+  Furthermore, it guarantees Fifo ordering. Centralized implementation using a sequencer.
+- ```TOMULTICASTSC``` Total ordering multicast. All messages are delivered in the same order to all nodes. 
+  Furthermore, it guarantees Fifo ordering. Decentralized implementation using scalar timestamps.
+- ```COMULTICAST``` Causal ordering multicast. Messages are delivered by maintaining cause-and-effect relationships.
+  Decentralized implementation using vector timestamps.
 - ```TOCOMULTICAST``` Total and Causal ordering multicast. Messages are delivered in the same order to all nodes and 
   by maintaining cause-and-effect relationships.
   
