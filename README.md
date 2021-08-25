@@ -2,7 +2,7 @@
 
 Distributed application to multicast messages between different nodes. The application allows you to instantiate 
 multiple concurrent multicast groups and set different requirements on the message delivery order. A registry server 
-manages the creation of multicast groups and the discovery of available ones. Each node exposes an HTTP Rest interface 
+manages the creation of multicast groups and the discovery of available ones. Each node exposes an HTTP REST interface 
 to access the services offered by the application.
 
 Available multicast algorithms are:
@@ -73,7 +73,7 @@ The container can be configured through the following environment variables:
 - ```REST_PORT=uint``` port number of the rest server (default 80)
 
 ## REST API
-
+The REST API can be accessed using scripts in the [scripts/api](scripts/api) folder
 ### API Resources
   - [GET /registry/groups](#get-registrygroups)
   - [GET /groups](#get-groups)
